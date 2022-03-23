@@ -575,7 +575,7 @@ class Response:
 	def asdict(self):
 		return_dict = {}
 		if(self.responseCode):
-			return_dict["responseCode"] = self.responseCode
+			return_dict["responseCode"] = int(self.responseCode)
 		if(self.responseMessage):
 			return_dict["responseMessage"] = self.responseMessage
 		if(self.responseData):

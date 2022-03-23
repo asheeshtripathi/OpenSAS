@@ -53,8 +53,8 @@ def sendGetRequest(parameters):
 
 def generateResponse(responseCode):
     response = {}
-    response["responseCode"] = str(responseCode)
-    response["message"] = WinnForum.responseDecode(responseCode)
+    response["responseCode"] = int(str(responseCode))
+    response["responseMessage"] = WinnForum.responseDecode(responseCode)
     return response
 
 def sendPostRequest(parameters):
@@ -226,11 +226,12 @@ def register(sid, data):
             response.measReportConfig = item["measCapability"]
         responseArr.append(response.asdict())
     responseDict = {"registrationResponse":responseArr}
-    print(responseDict)
+    #print(responseDict)
     socket.emit('registrationResponse', to=sid, data=json.dumps(responseDict))
     #if the radio does not get the assignment out of the meas config
     for radio in assignmentArr:
         sendAssignmentToRadio(radio)
+    return json.dumps(responseDict)
 
 @socket.on('deregistrationRequest')
 def deregister(sid, data):
@@ -254,7 +255,8 @@ def deregister(sid, data):
             response.response = SASAlgorithms.generateResponse(103)
         responseArr.append(response.asdict())
     responseDict = {"deregistrationResponse":responseArr}
-    socket.emit('deregistrationResponse', to=sid, data=json.dumps(responseDict))   
+    socket.emit('deregistrationResponse', to=sid, data=json.dumps(responseDict))
+    return json.dumps(responseDict)
 
 @socket.on('grantRequest')
 def grantRequest(sid, data):
@@ -302,6 +304,7 @@ def grantRequest(sid, data):
         responseArr.append(grantResponse.asdict())
     responseDict = {"grantResponse":responseArr}
     socket.emit('grantResponse', to=sid, data=json.dumps(responseDict))
+    return json.dumps(responseDict)
 
 @socket.on('heartbeatRequest')
 def heartbeat(sid, data):
@@ -329,6 +332,7 @@ def heartbeat(sid, data):
 
     for g in grantArray:
         threading.Timer((response.heartbeatInterval*1.1)+2, cancelGrant, [g]).start()
+    return json.dumps(responseDict)
 
 @socket.on('relinquishmentRequest')
 def relinquishment(sid, data):
@@ -354,6 +358,7 @@ def relinquishment(sid, data):
         relinquishArr.append(response)
     responseDict = {"relinquishmentResponse":relinquishArr}
     socket.emit('relinquishmentResponse', to=sid, data=json.dumps(responseDict))
+    return json.dumps(responseDict)
 
 @socket.on('spectrumInquiryRequest')
 def spectrumInquiryRequest(sid, data):
@@ -371,6 +376,7 @@ def spectrumInquiryRequest(sid, data):
                 if highFreq < 3700000000 and highFreq > 3650000000:
                     channelType = "GAA"
                 present = SASAlgorithms.isPUPresentREM(REM, highFreq, lowFreq, None, None, None)
+                present = 0
                 if present == 0:#not present
                     fr = WinnForum.FrequencyRange(lowFreq, highFreq)
                     availChan = WinnForum.AvailableChannel(fr, channelType, ruleApplied, maxEirp)
@@ -382,6 +388,7 @@ def spectrumInquiryRequest(sid, data):
         inquiryArr.append(response.asdict())
     responseDict = {"spectrumInquiryResponse":inquiryArr}
     socket.emit('spectrumInquiryResponse', to=sid, data=json.dumps(responseDict))
+    return json.dumps(responseDict)
 
 @socket.on('changeSettings')
 def changeAlgorithm(sid, data):
