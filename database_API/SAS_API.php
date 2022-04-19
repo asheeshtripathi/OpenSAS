@@ -2,10 +2,10 @@
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: * ");
 header("Access-Control-Allow-Headers: Content-Type");
-   include '../incSAS/database.php';//include 'database.php';
+   include 'database.php';
    $connection = mysqli_connect(DB_SERVER, DB_USERNAME, DB_PASSWORD);
    if (mysqli_connect_errno()){
-     echo "Failed to connect to MySQL: " . mysqli_connect_error();
+	   echo "Failed to connect to MySQL: " . mysqli_connect_error();
    }
    $database = mysqli_select_db($connection, DB_DATABASE);
 	//$result = NULL;
@@ -19,7 +19,7 @@ header("Access-Control-Allow-Headers: Content-Type");
    date_default_timezone_set('America/New_York');
    //session_start();
 
-   if ($_SERVER["REQUEST_METHOD"] == "POST") {
+   if ($_SERVER["REQUEST_METHOD"] === "POST") {
    	$action = $_POST['action'];
    	if ($action == "createSU"){
 
