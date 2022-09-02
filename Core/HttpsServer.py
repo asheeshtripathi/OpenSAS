@@ -87,11 +87,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(response.getvalue())
         
 
-httpd = HTTPServer(('localhost', 443), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
 
 httpd.socket = ssl.wrap_socket (httpd.socket, 
         keyfile="Certs/myCA.key", 
         certfile='Certs/myCA.pem', server_side=True)
-print("Listening on port 443")
+print("Listening on port 1443")
 httpd.serve_forever()
 
