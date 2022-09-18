@@ -7,7 +7,9 @@ Advised by Dr. Carl Dietrich (cdietric@vt.edu)
 For Wireless@VT
 """
 
+from ast import Global
 import eventlet #pip install eventlet
+eventlet.monkey_patch()
 import socketio #pip install socketio
 import requests
 import json
@@ -20,10 +22,18 @@ import CBSD
 import threading
 import uuid
 import random
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+from threading import Thread
+from time import sleep
+import ssl
+from io import BytesIO
 
 GETURL = "http://localhost/SASAPI/SAS_API_GET.php"
 POSTURL = "http://localhost/SASAPI/SAS_API.php"
 SASKEY = "qowpe029348fuqw9eufhalksdjfpq3948fy0q98ghefqi"
+
+############################### Global variables start ###################################################
 
 allClients = []
 allRadios = [] #CBSDSocket
@@ -31,20 +41,30 @@ allWebApps = []
 allSASs = []
 grants = []
 cbsds = [] #cbsd references
-
+CbsdList = []
+SpectrumList = []
 
 databaseLogging = False
 isSimulating = True
 NUM_OF_CHANNELS = 15
 puDetections = {}
 
-socket = socketio.Server()
+############################### Global variables end ###################################################
+
+
+socket = socketio.Server(async_mode='eventlet', cors_allowed_origins='*')
 app = socketio.WSGIApp(socket, static_files={
     '/': {'content_type': 'text/html', 'filename': 'index.html'}
 })
+# eventlet.monkey_patch()
 
 REM = SASREM.SASREM()
 SASAlgorithms = SASAlgorithms.SASAlgorithms()
+
+@socket.on('test')
+def test(id, data):
+    print("Received event:" + data)
+    socket.emit("test", "hi")
 
 def sendGetRequest(parameters):
     parameters["SAS_KEY"] = SASKEY
@@ -183,8 +203,14 @@ def disconnect(sid):
         if radio.sid == sid:
             allRadios.remove(radio)
 
+@socket.on('getCbsdList')
+def sendCbsdList(id, data):
+    global CbsdList
+    socket.emit('cbsdUpdate', CbsdList)
+
 @socket.on('registrationRequest')
 def register(sid, data):
+    global CbsdList
     jsonData = json.loads(data)
     responseArr = []
     assignmentArr = []
@@ -225,9 +251,27 @@ def register(sid, data):
         if "measCapability" in item:
             response.measReportConfig = item["measCapability"]
         responseArr.append(response.asdict())
+        """ Create a JSON with all the details of the CBSD and append to the list """
+        item["position"]={}
+        item["spectrum"]={
+            'subband': 0,
+            'low': 0,
+            'high': 0,
+        }
+        item["cbsdId"] = radio.id
+        item["position"]["lat"] = item["installationParam"]["latitude"]
+        item["position"]["lng"] = item["installationParam"]["longitude"]
+        item["state"] = 1
+        item["stateText"] = "Registered"
+        CbsdList.append(item)
+
     responseDict = {"registrationResponse":responseArr}
     #print(responseDict)
-    socket.emit('registrationResponse', to=sid, data=json.dumps(responseDict))
+    print("Pinging webserver about the successfully registration")
+    #socket.emit('registrationResponse', json.dumps(responseDict))
+    # global socket
+    socket.emit('cbsdUpdate', CbsdList)
+
     #if the radio does not get the assignment out of the meas config
     for radio in assignmentArr:
         sendAssignmentToRadio(radio)
@@ -254,9 +298,46 @@ def deregister(sid, data):
             response.cbsdId = item["cbsdId"]
             response.response = SASAlgorithms.generateResponse(103)
         responseArr.append(response.asdict())
+        for cbsd in list(CbsdList):
+            if (cbsd['cbsdId'] == item['cbsdId']):
+                CbsdList.remove(cbsd)
     responseDict = {"deregistrationResponse":responseArr}
+    socket.emit('cbsdUpdate', CbsdList)
+
     socket.emit('deregistrationResponse', to=sid, data=json.dumps(responseDict))
     return json.dumps(responseDict)
+
+def computeSubband(low, high):
+    if low == 3550000000 and high == 3560000000:
+        return 1
+    if low == 3560000000 and high == 3570000000:
+        return 2
+    if low == 3570000000 and high == 3580000000:
+        return 3
+    if low == 3580000000 and high == 3590000000:
+        return 4
+    if low == 3590000000 and high == 3600000000:
+        return 5
+    if low == 3600000000 and high == 3610000000:
+        return 6
+    if low == 3610000000 and high == 3620000000:
+        return 7
+    if low == 3620000000 and high == 3630000000:
+        return 8
+    if low == 3630000000 and high == 3640000000:
+        return 9
+    if low == 3640000000 and high == 3650000000:
+        return 10
+    if low == 3650000000 and high == 3660000000:
+        return 11
+    if low == 3660000000 and high == 3670000000:
+        return 12
+    if low == 3670000000 and high == 3680000000:
+        return 13
+    if low == 3680000000 and high == 3690000000:
+        return 14
+    if low == 3690000000 and high == 3700000000:
+        return 15
 
 @socket.on('grantRequest')
 def grantRequest(sid, data):
@@ -301,6 +382,32 @@ def grantRequest(sid, data):
         if grantResponse.response.responseCode == "0":
             g = WinnForum.Grant(grantResponse.grantId, item["cbsdId"], grantResponse.operationParam, vtgp, grantResponse.grantExpireTime)
             grants.append(g)
+            subband = computeSubband(item["minFrequency"], item["maxFrequency"])
+            SpectrumInfo = {
+                'subband': subband,
+                'low': item["minFrequency"],
+                'high': item["maxFrequency"],
+                'cbsdId': item["cbsdId"],
+                'state': 'granted',
+                'power': item["powerLevel"]
+            }
+            SpectrumList.append(SpectrumInfo)
+            for i, cbsd in enumerate(CbsdList):
+                if(cbsd['cbsdId'] == item['cbsdId']):
+                    cbsd['state'] = 2
+                    cbsd['stateText'] = "Granted"
+                    cbsd["spectrum"]={
+                        'subband': subband,
+                        'low': str(round(int(item["minFrequency"])/1000000000, 3)),
+                        'high': str(round(int(item["maxFrequency"])/1000000000, 3)),
+                        'power': item["powerLevel"],
+                    }
+                    CbsdList[i] = cbsd
+                    
+            socket.emit('spectrumUpdate', SpectrumList)
+            socket.emit('cbsdUpdate', CbsdList)
+
+            print(SpectrumList)
         responseArr.append(grantResponse.asdict())
     responseDict = {"grantResponse":responseArr}
     socket.emit('grantResponse', to=sid, data=json.dumps(responseDict))
@@ -327,9 +434,22 @@ def heartbeat(sid, data):
         grant.heartbeatTime = datetime.now(timezone.utc)
         grant.heartbeatInterval = response.heartbeatInterval
         hbrArray.append(response.asdict())
+        for i, item in enumerate(SpectrumList):
+            if(item['cbsdId'] == hb['cbsdId']):
+                item['state'] = 3
+                item['stateText'] = "Authorized"
+                SpectrumList[i] = item
+        for i, cbsd in enumerate(CbsdList):
+            if(cbsd['cbsdId'] == hb['cbsdId']):
+                cbsd['state'] = 3
+                cbsd['stateText'] = "Authorized"
+                CbsdList[i] = cbsd
+                    
+    socket.emit('spectrumUpdate', SpectrumList)
+    socket.emit('cbsdUpdate', CbsdList)
     responseDict = {"heartbeatResponse":hbrArray}
     socket.emit('heartbeatResponse', to=sid, data=json.dumps(responseDict))
-
+    
     for g in grantArray:
         threading.Timer((response.heartbeatInterval*1.1)+2, cancelGrant, [g]).start()
     return json.dumps(responseDict)
@@ -345,7 +465,11 @@ def relinquishment(sid, data):
         params["action"] = "relinquishGrant"
         if databaseLogging:
             sendPostRequest(params)
-        success = removeGrant(getGrantWithID(relinquishmentRequest["grantId"]).id, relinquishmentRequest["cbsdId"])
+        success = None
+        if (getGrantWithID(relinquishmentRequest["grantId"] != None)):
+            success = removeGrant(getGrantWithID(relinquishmentRequest["grantId"]).id, relinquishmentRequest["cbsdId"])
+        else:
+            relinquishmentRequest["grantId"] = "Terminated"
         response = {}
         response["cbsdId"] = relinquishmentRequest["cbsdId"]
         response["grantId"] = relinquishmentRequest["grantId"]
@@ -353,9 +477,25 @@ def relinquishment(sid, data):
             response["response"] = generateResponse(102)
         elif success:
             response["response"] = generateResponse(0) 
+        elif relinquishmentRequest["grantId"] == "Terminated":
+            response["response"] = generateResponse(501) 
         else:
             response["response"] = generateResponse(103) 
         relinquishArr.append(response)
+        if success:
+            for i, item in enumerate(SpectrumList):
+                if(item['cbsdId'] == relinquishmentRequest['cbsdId']):
+                    item['state'] = 1
+                    item['stateText'] = "Registered"
+                    SpectrumList[i] = item
+            for i, cbsd in enumerate(CbsdList):
+                if(cbsd['cbsdId'] == relinquishmentRequest['cbsdId']):
+                    cbsd['state'] = 1
+                    cbsd['stateText'] = "Registered"
+                    CbsdList[i] = cbsd
+                    
+    socket.emit('spectrumUpdate', SpectrumList)
+    socket.emit('cbsdUpdate', CbsdList)
     responseDict = {"relinquishmentResponse":relinquishArr}
     socket.emit('relinquishmentResponse', to=sid, data=json.dumps(responseDict))
     return json.dumps(responseDict)
@@ -376,6 +516,8 @@ def spectrumInquiryRequest(sid, data):
                 if highFreq < 3700000000 and highFreq > 3650000000:
                     channelType = "GAA"
                 present = SASAlgorithms.isPUPresentREM(REM, highFreq, lowFreq, None, None, None)
+                print("Present =")
+                print (REM.objects)
                 present = 0
                 if present == 0:#not present
                     fr = WinnForum.FrequencyRange(lowFreq, highFreq)
@@ -387,7 +529,7 @@ def spectrumInquiryRequest(sid, data):
 
         inquiryArr.append(response.asdict())
     responseDict = {"spectrumInquiryResponse":inquiryArr}
-    socket.emit('spectrumInquiryResponse', to=sid, data=json.dumps(responseDict))
+    socket.emit('spectrumInquiryResponse', json.dumps(responseDict))
     return json.dumps(responseDict)
 
 @socket.on('changeSettings')
@@ -579,6 +721,21 @@ def cancelGrant(grant):
     if grant.heartbeatTime + timedelta(0, grant.heartbeatInterval) < now:
         removeGrant(grant.id, grant.cbsdId)
         print('grant ' + grant.id + ' canceled')
+        for i, item in enumerate(SpectrumList):
+            if(item['cbsdId'] == grant.cbsdId):
+                item['state'] = 1
+                item['stateText'] = "Registered"
+                SpectrumList[i] = item
+        for i, cbsd in enumerate(CbsdList):
+            if(cbsd['cbsdId'] == grant.cbsdId):
+                cbsd['state'] = 1
+                cbsd['stateText'] = "Registered"
+                CbsdList[i] = cbsd
+        socket.emit('spectrumUpdate', SpectrumList)
+        socket.emit('cbsdUpdate', CbsdList)           
+    
+
+
 
 def sendAssignmentToRadio(cbsd):
     print("a sensing radio has joined")
@@ -701,9 +858,114 @@ def checkPUAlert(data=None):
     else:
         threading.Timer(1, checkPUAlert).start()
    
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'SAS Emulation HTTPS server')
+
+    def do_POST(self):
+        if (self.path == "/sas-api/registration"):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = register('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/spectrumInquiry"):
+            print("Spectrum Inquiry")
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = spectrumInquiryRequest('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/grant"):
+            print("Grant")
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = grantRequest('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/heartbeat"):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = heartbeat('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/relinquishment"):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = relinquishment('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/deregistration"):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            sas_resp = deregister('', body)
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+        
+def thread2(args):
+    # httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
+    # httpd.socket = ssl.wrap_socket (httpd.socket, 
+    #         keyfile="Certs/myCA.key", 
+    #         certfile='Certs/myCA.pem', server_side=True)
+    # print("Listening on port 1443")
+    # httpd.serve_forever()  
+    if(not isSimulating):
+        threading.Timer(3.0, checkPUAlert).start()
+    # eventlet.monkey_patch()
+    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
 
 if __name__ == '__main__':
     getSettings()
-    if(not isSimulating):
-        threading.Timer(3.0, checkPUAlert).start()
-    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+    thread = Thread(target = thread2, args = (10, ))
+    thread.start()
+    # thread.join()
+    # if(not isSimulating):
+    #     threading.Timer(3.0, checkPUAlert).start()
+    # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+    httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
+    httpd.socket = ssl.wrap_socket (httpd.socket, 
+            keyfile="Certs/myCA.key", 
+            certfile='Certs/myCA.pem', server_side=True)
+    print("Listening on port 1443")
+    httpd.serve_forever()    
+
+

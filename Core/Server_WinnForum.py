@@ -851,6 +851,11 @@ class OperationParam:
 			return_dict["operationFrequencyRange"] = self.operationFrequencyRange.asdict()
 		return return_dict
 
+	def __str__(self):
+		return str(self.__class__) + ": " + str(self.__dict__)
+
+	
+
 class VTGrantParams:
 	"""
 	Parameters for extended grant request data.
@@ -1214,3 +1219,6 @@ class Grant:
 		if(self.heartbeatInterval):
 			return_dict["heartbeatInterval"] = self.heartbeatInterval
 		return return_dict
+
+	def __str__(self):
+		return str(self.__class__) + ": " + str(self.__dict__)
