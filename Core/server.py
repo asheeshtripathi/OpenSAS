@@ -263,6 +263,10 @@ def register(sid, data):
         item["position"]["lng"] = item["installationParam"]["longitude"]
         item["state"] = 1
         item["stateText"] = "Registered"
+        if(item['fccId'] == "CCI-CBRS-001"):
+            item["accessPriority"] = "GAA"
+        if(item['fccId'] == "CCI-CBRS-001"):
+            item["accessPriority"] = "PAL"
         CbsdList.append(item)
 
     responseDict = {"registrationResponse":responseArr}
@@ -388,10 +392,11 @@ def grantRequest(sid, data):
                 'low': item["minFrequency"],
                 'high': item["maxFrequency"],
                 'cbsdId': item["cbsdId"],
-                'state': 'granted',
-                'power': item["powerLevel"]
+                'state': 2,
+                'stateText': "Granted",
+                'power': item["powerLevel"],
             }
-            SpectrumList.append(SpectrumInfo)
+            
             for i, cbsd in enumerate(CbsdList):
                 if(cbsd['cbsdId'] == item['cbsdId']):
                     cbsd['state'] = 2
@@ -401,9 +406,12 @@ def grantRequest(sid, data):
                         'low': str(round(int(item["minFrequency"])/1000000000, 3)),
                         'high': str(round(int(item["maxFrequency"])/1000000000, 3)),
                         'power': item["powerLevel"],
+                        
                     }
                     CbsdList[i] = cbsd
-                    
+                    SpectrumInfo['accessPriority'] = cbsd['accessPriority']
+                    SpectrumInfo['fccId'] = cbsd['fccId']
+            SpectrumList.append(SpectrumInfo)        
             socket.emit('spectrumUpdate', SpectrumList)
             socket.emit('cbsdUpdate', CbsdList)
 
@@ -431,19 +439,20 @@ def heartbeat(sid, data):
         except KeyError:
             print("no measure report")
         response = SASAlgorithms.runHeartbeatAlgorithm(grants, REM, hb, grant)
-        grant.heartbeatTime = datetime.now(timezone.utc)
-        grant.heartbeatInterval = response.heartbeatInterval
-        hbrArray.append(response.asdict())
-        for i, item in enumerate(SpectrumList):
-            if(item['cbsdId'] == hb['cbsdId']):
-                item['state'] = 3
-                item['stateText'] = "Authorized"
-                SpectrumList[i] = item
-        for i, cbsd in enumerate(CbsdList):
-            if(cbsd['cbsdId'] == hb['cbsdId']):
-                cbsd['state'] = 3
-                cbsd['stateText'] = "Authorized"
-                CbsdList[i] = cbsd
+        if grant != None:
+            grant.heartbeatTime = datetime.now(timezone.utc)
+            grant.heartbeatInterval = response.heartbeatInterval
+            hbrArray.append(response.asdict())
+            for i, item in enumerate(SpectrumList):
+                if(item['cbsdId'] == hb['cbsdId']):
+                    item['state'] = 3
+                    item['stateText'] = "Authorized"
+                    SpectrumList[i] = item
+            for i, cbsd in enumerate(CbsdList):
+                if(cbsd['cbsdId'] == hb['cbsdId']):
+                    cbsd['state'] = 3
+                    cbsd['stateText'] = "Authorized"
+                    CbsdList[i] = cbsd
                     
     socket.emit('spectrumUpdate', SpectrumList)
     socket.emit('cbsdUpdate', CbsdList)
