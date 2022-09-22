@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import threading
 import numpy
 
+
 class SASAlgorithms:
     """
     This class determines the parameters and algorithms used by the SAS
@@ -51,14 +52,20 @@ class SASAlgorithms:
         return self.maxEIRP
 
 
-    def runGrantAlgorithm(self, grants, REM, request):
+    def runGrantAlgorithm(self, grants, REM, request, CbsdList, SpectrumList, socket):
         grantResponse = WinnForum.GrantResponse()
+        IsPAL = False
+        for i, cbsd in enumerate(CbsdList):
+                if(cbsd['cbsdId'] == request.cbsdId):
+                    if(cbsd['accessPriority'] == "PAL"):
+                        IsPAL = True
+        
         if not self.acceptableRange(self.getLowFreqFromOP(request.operationParam), self.getHighFreqFromOP(request.operationParam)):
             grantResponse.response = self.generateResponse(103)
             grantResponse.response.responseData = "Frequency range outside of license"
             return grantResponse
         elif self.grantAlgorithm == 'DEFAULT':
-            grantResponse = self.defaultGrantAlg(grants, REM, request)
+            grantResponse = self.defaultGrantAlg(grants, REM, request, IsPAL, CbsdList, SpectrumList, socket)
         elif self.grantAlgorithm =='TIER':
             grantResponse = self.tierGrantAlg(grants, REM, request)
         return grantResponse
@@ -69,6 +76,7 @@ class SASAlgorithms:
             response.response = self.generateResponse(103)
             return response
         response.cbsdId = grant.cbsdId
+        
         response.grantId = grant.id
         if "grantRenew" in heartbeat:
             if heartbeat["grantRenew"] == True:
@@ -114,7 +122,7 @@ class SASAlgorithms:
         #return "SUSPENDED_GRANT"
         return "SUCCESS"
 
-    def defaultGrantAlg(self, grants, REM, request):
+    def defaultGrantAlg(self, grants, REM, request, IsPAL, CbsdList, SpectrumList, socket):
         gr = WinnForum.GrantResponse()
         gr.grantId = None
         gr.cbsdId = request.cbsdId
@@ -122,13 +130,29 @@ class SASAlgorithms:
         gr.heartbeatInterval = self.getHeartbeatIntervalForGrantId(gr.grantId)
         gr.measReportConfig = ["RECEIVED_POWER_WITH_GRANT", "RECEIVED_POWER_WITHOUT_GRANT"]
         conflict = False
-        for grant in grants:
+        for grant in list(grants):
             rangea = self.getHighFreqFromOP(grant.operationParam)
             rangeb = self.getLowFreqFromOP(grant.operationParam)
             freqa = self.getHighFreqFromOP(request.operationParam)
             freqb = self.getLowFreqFromOP(request.operationParam)
             if self.frequencyOverlap(freqa, freqb, rangea, rangeb):
-                conflict = True
+                if IsPAL:
+                    grants.remove(grant)
+                    for i, item in enumerate(SpectrumList):
+                        if(item['cbsdId'] == grant.cbsdId):
+                            item['state'] = 1
+                            item['stateText'] = "Registered"
+                            SpectrumList[i] = item
+                    for i, cbsd in enumerate(CbsdList):
+                        if(cbsd['cbsdId'] == grant.cbsdId):
+                            cbsd['state'] = 1
+                            cbsd['stateText'] = "Registered"
+                            CbsdList[i] = cbsd
+                    socket.emit('spectrumUpdate', SpectrumList)
+                    socket.emit('cbsdUpdate', CbsdList)
+                    time.sleep(1)
+                else:
+                    conflict = True
         if conflict == True:
             gr.response = self.generateResponse(401)
         else:

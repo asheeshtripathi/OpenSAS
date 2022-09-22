@@ -8,6 +8,7 @@ For Wireless@VT
 """
 
 from ast import Global
+
 import eventlet #pip install eventlet
 eventlet.monkey_patch()
 import socketio #pip install socketio
@@ -263,10 +264,10 @@ def register(sid, data):
         item["position"]["lng"] = item["installationParam"]["longitude"]
         item["state"] = 1
         item["stateText"] = "Registered"
-        if(item['fccId'] == "CCI-CBRS-001"):
-            item["accessPriority"] = "GAA"
-        if(item['fccId'] == "CCI-CBRS-001"):
+        if(item['fccId'] == "CCI-CBRS-002"):
             item["accessPriority"] = "PAL"
+        else:
+            item["accessPriority"] = "GAA"
         CbsdList.append(item)
 
     responseDict = {"registrationResponse":responseArr}
@@ -378,7 +379,7 @@ def grantRequest(sid, data):
             vt = item["vtGrantParams"]
             vtgp = WinnForum.VTGrantParams(None, None, vt["preferredFrequency"], vt["frequencyAbsolute"], vt["minBandwidth"], vt["preferredBandwidth"], vt["preferredBandwidth"], vt["startTime"], vt["endTime"], vt["approximateByteSize"], vt["dataType"], vt["powerLevel"], vt["location"], vt["mobility"], vt["maxVelocity"])
             grantRequest.vtGrantParams = vtgp
-        grantResponse = SASAlgorithms.runGrantAlgorithm(grants, REM, grantRequest)#algorithm   
+        grantResponse = SASAlgorithms.runGrantAlgorithm(grants, REM, grantRequest, CbsdList, SpectrumList, socket)#algorithm   
         if databaseLogging:
             sendPostRequest(item)#Database log
         else:
@@ -396,7 +397,6 @@ def grantRequest(sid, data):
                 'stateText': "Granted",
                 'power': item["powerLevel"],
             }
-            
             for i, cbsd in enumerate(CbsdList):
                 if(cbsd['cbsdId'] == item['cbsdId']):
                     cbsd['state'] = 2
@@ -460,7 +460,8 @@ def heartbeat(sid, data):
     socket.emit('heartbeatResponse', to=sid, data=json.dumps(responseDict))
     
     for g in grantArray:
-        threading.Timer((response.heartbeatInterval*1.1)+2, cancelGrant, [g]).start()
+        if response.heartbeatInterval != None:
+            threading.Timer((response.heartbeatInterval*1.1)+2, cancelGrant, [g]).start()
     return json.dumps(responseDict)
 
 @socket.on('relinquishmentRequest')
@@ -515,15 +516,20 @@ def spectrumInquiryRequest(sid, data):
     inquiryArr = []
     for request in jsonData["spectrumInquiryRequest"]:
         response = WinnForum.SpectrumInquiryResponse(request["cbsdId"], [], SASAlgorithms.generateResponse(0))
+        channelType = "GAA"
+        for i, cbsd in enumerate(CbsdList):
+                if(cbsd['cbsdId'] == request['cbsdId']):
+                    channelType = cbsd['accessPriority']
         for fr in request["inquiredSpectrum"]:
             lowFreq = int(fr["lowFrequency"])
             highFreq = int(fr["highFrequency"])
-            channelType = "PAL"
+            
+            # channelType = "PAL"
             ruleApplied = "FCC_PART_96"
             maxEirp = SASAlgorithms.getMaxEIRP()
             if SASAlgorithms.acceptableRange(lowFreq, highFreq):
-                if highFreq < 3700000000 and highFreq > 3650000000:
-                    channelType = "GAA"
+                # if highFreq < 3700000000 and highFreq > 3650000000:
+                #     channelType = "GAA"
                 present = SASAlgorithms.isPUPresentREM(REM, highFreq, lowFreq, None, None, None)
                 print("Present =")
                 print (REM.objects)
