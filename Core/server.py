@@ -264,7 +264,7 @@ def register(sid, data):
         item["position"]["lng"] = item["installationParam"]["longitude"]
         item["state"] = 1
         item["stateText"] = "Registered"
-        if(item['fccId'] == "CCI-CBRS-002"):
+        if(item['fccId'] == "CCI-CBRS-PAL"):
             item["accessPriority"] = "PAL"
         else:
             item["accessPriority"] = "GAA"
@@ -977,9 +977,9 @@ if __name__ == '__main__':
     #     threading.Timer(3.0, checkPUAlert).start()
     # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
     httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
-    httpd.socket = ssl.wrap_socket (httpd.socket, 
-            keyfile="Certs/myCA.key", 
-            certfile='Certs/myCA.pem', server_side=True)
+ #   httpd.socket = ssl.wrap_socket (httpd.socket, 
+ #           keyfile="Certs/myCA.key", 
+ #           certfile='Certs/myCA.pem', server_side=True)
     print("Listening on port 1443")
     httpd.serve_forever()    
 
