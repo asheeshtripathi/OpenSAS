@@ -1,8 +1,14 @@
-# Spectrum Access System (SAS)
+# Open Source Spectrum Access System (SAS)
 ## What is this?
-This is the code for the Virginia Tech Open Source SAS and Virginia Tech CORNET client. The role of the SAS is to allow
+This is the code for the Virginia Tech Open Source SAS (VT OpenSAS) and VT SAS client. The role of the SAS is to allow
 for remote and autonomous operation of the USRPs in Kelly Hall. The SAS is
 to adhere to WinnForum and FCC regulations on SAS operations.
+
+## Getting started
+Please refer to https://github.com/CCI-NextG-Testbed/OpenSASDocker for the dockerfile to create a image for this repository. The dockerfile also clones the 
+OpenSAS-dashboard repo and runs it.
+
+The dockerfile is the easiest way to get started.
 
 ## File Structure
 ### Core
@@ -13,23 +19,19 @@ primary interet for SAS researchers.
 
 An example of starting up the SAS server server.py:
 ```python3 server.py```
-### Cornet
-The cornet/ folder contains everything required to launch the CORNET SAS
-client. This connects to the SAS server, so ensure the sever is running
-before attempting to launch this. If you are a Wireless@VT user with
-CORNET access, this is how you can connect a Kelly Hall (or any other
-network attached USRP) to the SAS.
 
-An example of executing the CORNET SAS client socket_to_sas.py:
-```python3 socket_to_sas.py -p 5000 -a "127.0.0.1" --sim "simulations/sim_one.json"```
-**Note**: On CORNET there may be environment
-issues with Python. Please use:
-```grrun python3 socket_to_sas.py -p ... -a ... --sim ...```
+The CBSDs can access the SAS via the following URL endpoints:
 
+http://localhost:1443/sas-api/registration
 
-## Links
-https://vtwireless.github.io/SAS/index.html
+http://localhost:1443/sas-api/spectrumInquiry
+
+http://localhost:1443/sas-api/grant
+
+http://localhost:1443/sas-api/heartbeat
+
+http://localhost:1443/sas-api/relinquishment
+
+http://localhost:1443/sas-api/deregistration
 
 
-## Contacts
-Contact Cameron Makin at cammakin8@vt.edu for questions
