@@ -192,12 +192,12 @@ def removeCBSD(cbsdId):
 @socket.event
 def connect(sid, environ):
     print('connect ', sid)
-    allClients.append(sid)
+    #allClients.append(sid)
 
 @socket.event
 def disconnect(sid):
     print('disconnect ', sid)
-    allClients.remove(sid)
+    #allClients.remove(sid)
     if sid in allWebApps: allWebApps.remove(sid)
     if sid in allSASs: allSASs.remove(sid)
     for radio in allRadios:
@@ -373,6 +373,13 @@ def grantRequest(sid, data):
         if "operationParam" in item:
             ofr = WinnForum.FrequencyRange(item["minFrequency"], item["maxFrequency"])
             op = WinnForum.OperationParam(item["powerLevel"], ofr)
+            for radio in allClients:
+                if(radio.id == item["cbsdId"]):
+                    print(radio.id)
+                    print(radio.latitude)
+                    print(radio.longitude)
+                    grantRequest.lat = radio.latitude
+                    grantRequest.long = radio.longitude 
             grantRequest.operationParam = op
         vtgp = None
         if "vtGrantParams" in item:
@@ -386,6 +393,8 @@ def grantRequest(sid, data):
             grantResponse.grantId = generateId()
         if grantResponse.response.responseCode == "0":
             g = WinnForum.Grant(grantResponse.grantId, item["cbsdId"], grantResponse.operationParam, vtgp, grantResponse.grantExpireTime)
+            g.lat = grantRequest.lat
+            g.long = grantRequest.long
             grants.append(g)
             subband = computeSubband(item["minFrequency"], item["maxFrequency"])
             SpectrumInfo = {

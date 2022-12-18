@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import threading
 import numpy
+import math
 
 
 class SASAlgorithms:
@@ -51,6 +52,20 @@ class SASAlgorithms:
     def getMaxEIRP(self):
         return self.maxEIRP
 
+    def calculateDistance(self, a, b):
+        lat1, lon1 = a
+        lat2, lon2 = b
+        radius = 6371  # km
+
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) * math.sin(dlat / 2) +
+            math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+            math.sin(dlon / 2) * math.sin(dlon / 2))
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        d = radius * c
+
+        return d
 
     def runGrantAlgorithm(self, grants, REM, request, CbsdList, SpectrumList, socket):
         grantResponse = WinnForum.GrantResponse()
@@ -135,6 +150,7 @@ class SASAlgorithms:
             rangeb = self.getLowFreqFromOP(grant.operationParam)
             freqa = self.getHighFreqFromOP(request.operationParam)
             freqb = self.getLowFreqFromOP(request.operationParam)
+            dist = self.calculateDistance((grant.lat, grant.long), (request.lat, request.long))
             if self.frequencyOverlap(freqa, freqb, rangea, rangeb):
                 if IsPAL:
                     grants.remove(grant)
@@ -152,7 +168,10 @@ class SASAlgorithms:
                     socket.emit('cbsdUpdate', CbsdList)
                     time.sleep(1)
                 else:
-                    conflict = True
+                    if(dist < 0.100):
+                        conflict = True
+                    else:
+                        print("Distance greater than threshold")
         if conflict == True:
             gr.response = self.generateResponse(401)
         else:
