@@ -964,6 +964,19 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
+        if (self.path == "/sas-api/measurements"):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            print(body)
+            sas_resp = 'Received Measurements'
+            # response.write(b'This is POST request. ')
+            # response.write(b'Received: ')
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
         
 def thread2(args):
     # httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
@@ -985,10 +998,10 @@ if __name__ == '__main__':
     # if(not isSimulating):
     #     threading.Timer(3.0, checkPUAlert).start()
     # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
-    httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
- #   httpd.socket = ssl.wrap_socket (httpd.socket, 
- #           keyfile="Certs/myCA.key", 
- #           certfile='Certs/myCA.pem', server_side=True)
+    httpd = HTTPServer(('0.0.0.0', 1443), SimpleHTTPRequestHandler)
+    httpd.socket = ssl.wrap_socket (httpd.socket, 
+           keyfile="Certs/server_10.147.20.114.key", 
+           certfile='Certs/server_10.147.20.114.crt', server_side=True)
     print("Listening on port 1443")
     httpd.serve_forever()    
 

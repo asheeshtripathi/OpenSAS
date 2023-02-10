@@ -16,7 +16,7 @@ class SASAlgorithms:
     def __init__(self):
         self.grantAlgorithm = 'DEFAULT'
         self.REMAlgorithm = 'DEFAULT' #DEFAULT = EQUALWEIGHT, CELLS, TRUSTED, TRUST SCORE, RADIUS
-        self.defaultHeartbeatInterval = 5
+        self.defaultHeartbeatInterval = 20
         self.threshold = 30.0 #POWER THRESHOLD
         self.longitude = -80.4 #Blacksburg location
         self.latitude = 37.2
