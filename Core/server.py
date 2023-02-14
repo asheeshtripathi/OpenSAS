@@ -887,7 +887,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b'SAS Emulation HTTPS server')
+        self.wfile.write(b'OpenSAS HTTPS server')
 
     def do_POST(self):
         if (self.path == "/sas-api/registration"):
@@ -964,19 +964,19 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
-        if (self.path == "/sas-api/measurements"):
+        if self.path == "/sas-api/measurements":
             content_length = int(self.headers['Content-Length'])
             body = self.rfile.read(content_length)
             self.send_response(200)
             self.end_headers()
             response = BytesIO()
-            print(body)
+            json_str = body.decode('utf-8')  # Decode the bytes into a string
+            json_data = json.loads(json_str)  # Parse the string into a JSON object
+            print(json_data)
             sas_resp = 'Received Measurements'
-            # response.write(b'This is POST request. ')
-            # response.write(b'Received: ')
-            print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
+            socket.emit("sensorUpdate", data=json_data)
         
 def thread2(args):
     # httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
