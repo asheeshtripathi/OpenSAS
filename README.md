@@ -1,15 +1,15 @@
-# Open Source Spectrum Access System (SAS)
+# Open Source Spectrum Access System (OpenSAS)
 ## What is this?
 This is the forked version for the Virginia Tech SAS, called the OpenSAS. The role of the SAS is to allow
 spectrum management of CBSDs, activation of dynamic protection zones and environmental sensing for incumbent protection. The OpenSAS strives
 to adhere to WinnForum and FCC regulations on SAS and CBRS operations.
 
 ## Getting started Method 1 (local clone)
-In this method, the repository is clone locally.
+In this method, the repository is cloned locally. This is the way to go if HTTPS is required. 
 
 First clone the repository using git
 ```
-git clone https://github.com/CCI-NextG-Testbed/OpenSASDocker
+git clone https://github.com/CCI-NextG-Testbed/OpenSAS
 ```
 
 Next, create the CA and server/client certificates using the create_ssl_certs.sh script. Go into the /Core/Certs folder and run the script. Enter the IP of the machine running the OpenSAS if making CBSD requests externally, if making the requests locally, the IP/hostname can be 127.0.0.1
@@ -40,12 +40,13 @@ Finally, run the server by going into the Core directory
 ```
 python3 server.py
 ```
-This starts the SAS server. Now, the frontend can be started to view the GUI
+This starts the SAS server. Now, the frontend can be started to view the GUI. Please refer https://github.com/CCI-NextG-Testbed/OpenSAS-dashboard on instructions to start the frontend/GUI
 
 The CBSDs can access the SAS via the following URL endpoints:
 ```
 https://<IP/hostname>:1443/sas-api/<request>
-Example: 
+
+Examples: 
 
 https://127.0.0.1:1443/sas-api/registration or https://192.168.0.110:1443/sas-api/registration
 
@@ -69,12 +70,9 @@ The dockerfile is the easiest way to get started.
 ## File Structure
 ### Core
 The Core/ folder contains everything required to launch the SAS Core
-Server. This is the true SAS. It may have connections to N number of socketio
-clients. Regardess of your institution, this contians the code that is of
-primary interet for SAS researchers.
+Server. This is the true SAS.  Regardess of your institution, this contains the code that is of
+primary interest for SAS researchers.
 
-An example of starting up the SAS server:
-```python3 server.py```
 
 
 
