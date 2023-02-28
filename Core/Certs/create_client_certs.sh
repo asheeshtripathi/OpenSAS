@@ -10,7 +10,7 @@ client_subject="/C=US/ST=California/L=San Francisco/O=My Client/CN=$client_name"
 i=0
 while true; do
   # Generate the client private key
-  key_file="client_$client_name-$i.key"
+  key_file="client_${client_name}-${i}.key"
   if [ ! -f "$key_file" ]; then
     openssl genpkey -algorithm RSA -out "$key_file"
     break
@@ -21,7 +21,7 @@ done
 i=0
 while true; do
   # Generate the client certificate signing request (CSR)
-  csr_file="client_$client_name-$i.csr"
+  csr_file="client_${client_name}-${i}.csr"
   if [ ! -f "$csr_file" ]; then
     openssl req -new -key "$key_file" -out "$csr_file" -subj "$client_subject"
     break
@@ -32,7 +32,7 @@ done
 i=0
 while true; do
   # Sign the client certificate with the CA
-  crt_file="client_$client_name-$i.crt"
+  crt_file="client_${client_name}-${i}.crt"
   if [ ! -f "$crt_file" ]; then
     openssl x509 -req -in "$csr_file" -CA ca.crt -CAkey ca.key -CAcreateserial -out "$crt_file"
     break
@@ -40,6 +40,27 @@ while true; do
   i=$((i + 1))
 done
 
-# Print the names of the saved certificates
-echo "Client private key: $key_file"
-echo "Client certificate: $crt_file"
+# Ask the user if they want to save the client and CA certificates as a tar.gz file
+while true; do
+  echo -n "Do you want to save the client and CA certificates as a tar.gz file? (y/n): "
+  read save_tar
+  case $save_tar in
+    [Yy]* )
+      tar_file="certs_${client_name}.tar.gz"
+      tar -czf "$tar_file" "$key_file" "$crt_file" "ca.crt"
+      echo "Client and CA certificates saved as $tar_file"
+      # Delete the generated files and the CSR file
+      rm -f "$key_file" "$crt_file" "$csr_file"
+      break
+      ;;
+    [Nn]* )
+      echo "Client private key: $key_file"
+      echo "Client certificate: $crt_file"
+      echo "CA certificate: ca.crt"
+      break
+      ;;
+    * )
+      echo "Please answer y or n."
+      ;;
+  esac
+done

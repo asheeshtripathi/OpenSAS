@@ -972,11 +972,26 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             response = BytesIO()
             json_str = body.decode('utf-8')  # Decode the bytes into a string
             json_data = json.loads(json_str)  # Parse the string into a JSON object
-            print(json_data)
+            # print(json_data)
             sas_resp = 'Received Measurements'
+            print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
             socket.emit("sensorUpdate", data=json_data)
+        if self.path == "/sas-api/samples":
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            response = BytesIO()
+            json_str = body.decode('utf-8')  # Decode the bytes into a string
+            json_data = json.loads(json_str)  # Parse the string into a JSON object
+            # print(json_data)
+            sas_resp = 'Received IQ samples'
+            print(sas_resp)
+            response.write(str.encode(sas_resp))
+            self.wfile.write(response.getvalue())
+            # socket.emit("sensorUpdate", data=json_data)
         
 def thread2(args):
     # httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
@@ -1000,9 +1015,8 @@ if __name__ == '__main__':
     # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
     httpd = HTTPServer(('0.0.0.0', 1443), SimpleHTTPRequestHandler)
     httpd.socket = ssl.wrap_socket (httpd.socket, 
-           keyfile="Certs/server_10.147.20.114.key", 
-           certfile='Certs/server_10.147.20.114.crt', server_side=True)
+           keyfile="Certs/server_10.147.20.60.key", 
+           certfile='Certs/server_10.147.20.60.crt', server_side=True)
     print("Listening on port 1443")
     httpd.serve_forever()    
-
 
