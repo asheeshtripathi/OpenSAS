@@ -29,6 +29,7 @@ from threading import Thread
 from time import sleep
 import ssl
 from io import BytesIO
+from SensorProcessing import SensorProcessor
 
 GETURL = "http://localhost/SASAPI/SAS_API_GET.php"
 POSTURL = "http://localhost/SASAPI/SAS_API.php"
@@ -881,6 +882,8 @@ def checkPUAlert(data=None):
         #     pass
     else:
         threading.Timer(1, checkPUAlert).start()
+
+sensor_process = SensorProcessor()
    
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
@@ -986,7 +989,10 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             response = BytesIO()
             json_str = body.decode('utf-8')  # Decode the bytes into a string
             json_data = json.loads(json_str)  # Parse the string into a JSON object
-            # print(json_data)
+            print(json_data.keys())
+            # print(json_data['iq_samples'])
+            
+            sensor_process.processSensorData(json_data['iq_samples'], json_data['sensor_info'], json_data['detected_channel'])
             sas_resp = 'Received IQ samples'
             print(sas_resp)
             response.write(str.encode(sas_resp))
@@ -1015,8 +1021,8 @@ if __name__ == '__main__':
     # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
     httpd = HTTPServer(('0.0.0.0', 1443), SimpleHTTPRequestHandler)
     httpd.socket = ssl.wrap_socket (httpd.socket, 
-           keyfile="Certs/server_10.147.20.60.key", 
-           certfile='Certs/server_10.147.20.60.crt', server_side=True)
+           keyfile="Certs/server_10.147.20.75.key", 
+           certfile='Certs/server_10.147.20.75.crt', server_side=True)
     print("Listening on port 1443")
     httpd.serve_forever()    
 
