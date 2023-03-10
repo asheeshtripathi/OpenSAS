@@ -91,8 +91,12 @@ class SASAlgorithms:
             response.response = self.generateResponse(103)
             return response
         response.cbsdId = grant.cbsdId
-        
         response.grantId = grant.id
+        if(hasattr(grant, 'status')):
+            if grant.status == "TERMINATED":
+                response.response = self.generateResponse(501)
+                return response
+
         if "grantRenew" in heartbeat:
             if heartbeat["grantRenew"] == True:
                 response.grantExpireTime= self.calculateGrantExpireTime(grants, REM, grant, True)
@@ -146,6 +150,10 @@ class SASAlgorithms:
         gr.measReportConfig = ["RECEIVED_POWER_WITH_GRANT", "RECEIVED_POWER_WITHOUT_GRANT"]
         conflict = False
         for grant in list(grants):
+            if hasattr(grant, 'status'):
+                if grant.status == "TERMINATED":
+                    print("Skipping terminated grant")
+                    continue
             rangea = self.getHighFreqFromOP(grant.operationParam)
             rangeb = self.getLowFreqFromOP(grant.operationParam)
             freqa = self.getHighFreqFromOP(request.operationParam)
@@ -153,7 +161,7 @@ class SASAlgorithms:
             dist = self.calculateDistance((grant.lat, grant.long), (request.lat, request.long))
             if self.frequencyOverlap(freqa, freqb, rangea, rangeb):
                 if IsPAL:
-                    grants.remove(grant)
+                    grant.status = "TERMINATED"
                     for i, item in enumerate(SpectrumList):
                         if(item['cbsdId'] == grant.cbsdId):
                             item['state'] = 1
@@ -173,7 +181,14 @@ class SASAlgorithms:
                     else:
                         print("Distance greater than threshold")
         if conflict == True:
+            print("Conflict detected")
+            delattr(gr, 'grantExpireTime')
+            delattr(gr, 'heartbeatInterval')
+            delattr(gr, 'measReportConfig')
+            delattr(gr, 'grantId')
+            delattr(gr, 'channelType')
             gr.response = self.generateResponse(401)
+            print(gr.response)
         else:
             gr.response = self.generateResponse(0)
             gr.operationParam = request.operationParam

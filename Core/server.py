@@ -182,7 +182,17 @@ def measReportObjectFromJSON(json):
 def removeGrant(grantId, cbsdId):
     for g in grants:
         if str(g.id) == str(grantId) and str(g.cbsdId) == str(cbsdId):
+            print(g)
+            print("Deleting grant: " + str(grantId) + " from CBSD: " + str(cbsdId) + " from list")
             grants.remove(g)
+            return True
+    return False
+
+def terminateGrant(grantId, cbsdId):
+    for g in grants:
+        if str(g.id) == str(grantId) and str(g.cbsdId) == str(cbsdId):
+            print("Terminating grant: " + str(grantId) + " from CBSD: " + str(cbsdId) + " from list")
+            g.status = "TERMINATED"
             return True
     return False
 
@@ -430,7 +440,9 @@ def grantRequest(sid, data):
             socket.emit('cbsdUpdate', CbsdList)
 
             print(SpectrumList)
-        responseArr.append(grantResponse.asdict())
+            responseArr.append(grantResponse.asdict())
+        else:
+            responseArr.append(grantResponse.asdict())
     responseDict = {"grantResponse":responseArr}
     socket.emit('grantResponse', to=sid, data=json.dumps(responseDict))
     return json.dumps(responseDict)
@@ -453,7 +465,11 @@ def heartbeat(sid, data):
         except KeyError:
             print("no measure report")
         response = SASAlgorithms.runHeartbeatAlgorithm(grants, REM, hb, grant)
-        if grant != None:
+        IsTerminated = False
+        if(hasattr(grant, 'status')):
+            if(grant.status == "TERMINATED"):
+                IsTerminated = True
+        if grant != None and not IsTerminated:
             grant.heartbeatTime = datetime.now(timezone.utc)
             grant.heartbeatInterval = response.heartbeatInterval
             hbrArray.append(response.asdict())
@@ -467,7 +483,8 @@ def heartbeat(sid, data):
                     cbsd['state'] = 3
                     cbsd['stateText'] = "Authorized"
                     CbsdList[i] = cbsd
-                    
+        else:
+            hbrArray.append(response.asdict())
     socket.emit('spectrumUpdate', SpectrumList)
     socket.emit('cbsdUpdate', CbsdList)
     responseDict = {"heartbeatResponse":hbrArray}
@@ -476,7 +493,7 @@ def heartbeat(sid, data):
     for g in grantArray:
         if response.heartbeatInterval != None:
             threading.Timer((response.heartbeatInterval*1.2)+2, cancelGrant, [g]).start()
-            print("Terminating grant in " + str((response.heartbeatInterval*1.1)+2) + " seconds")
+            print("Terminating grant in " + str((response.heartbeatInterval*1.5)+2) + " seconds")
     return json.dumps(responseDict)
 
 @socket.on('relinquishmentRequest')
@@ -752,7 +769,9 @@ def resetRadioStatuses(radios):
 def cancelGrant(grant):
     now = datetime.now(timezone.utc)
     if grant.heartbeatTime + timedelta(0, grant.heartbeatInterval) < now:
-        removeGrant(grant.id, grant.cbsdId)
+        # Delete grant from list
+        threading.Timer(1000, removeGrant, [grant.id, grant.cbsdId]).start()
+        terminateGrant(grant.id, grant.cbsdId)
         print('grant ' + grant.id + ' canceled')
         for i, item in enumerate(SpectrumList):
             if(item['cbsdId'] == grant.cbsdId):
