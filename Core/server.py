@@ -105,8 +105,12 @@ def sendBroadcast(broadcastName, data):
 #    REM.addREMObject(obj)
 
 def getGrantWithID(grantId):
+    print("Total grants: " + str(len(grants)))
+    print("Requesting grant: " + str(grantId))
     for grant in grants:
+        print("Grant: " + str(grant.id))
         if str(grant.id) == str(grantId):
+            print("Grant found")
             return grant
     if databaseLogging:
         param = { "action": "getGrant", "grantId": grantId }
@@ -117,6 +121,7 @@ def getGrantWithID(grantId):
             print("false GrantId")
             return None  
     else:
+        print("Grant not found")
         return None
 
 def loadGrantFromJSON(json):
@@ -470,14 +475,18 @@ def heartbeat(sid, data):
     
     for g in grantArray:
         if response.heartbeatInterval != None:
-            threading.Timer((response.heartbeatInterval*1.1)+2, cancelGrant, [g]).start()
+            threading.Timer((response.heartbeatInterval*1.2)+2, cancelGrant, [g]).start()
+            print("Terminating grant in " + str((response.heartbeatInterval*1.1)+2) + " seconds")
     return json.dumps(responseDict)
 
 @socket.on('relinquishmentRequest')
 def relinquishment(sid, data):
     jsonData = json.loads(data)
     relinquishArr = []
+    print("Relinquishment request received:")
+    print(jsonData)
     for relinquishmentRequest in jsonData["relinquishmentRequest"]:
+        print("Processing relinquishment request for CBSD: " + relinquishmentRequest["cbsdId"] + " and grant: " + relinquishmentRequest["grantId"])
         params = {}
         params["cbsdId"] = relinquishmentRequest["cbsdId"]
         params["grantId"] = relinquishmentRequest["grantId"]
@@ -485,7 +494,7 @@ def relinquishment(sid, data):
         if databaseLogging:
             sendPostRequest(params)
         success = None
-        if (getGrantWithID(relinquishmentRequest["grantId"] != None)):
+        if (getGrantWithID(relinquishmentRequest["grantId"]) != None):
             success = removeGrant(getGrantWithID(relinquishmentRequest["grantId"]).id, relinquishmentRequest["cbsdId"])
         else:
             relinquishmentRequest["grantId"] = "Terminated"
@@ -1015,8 +1024,8 @@ if __name__ == '__main__':
     # eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
     httpd = HTTPServer(('0.0.0.0', 1443), SimpleHTTPRequestHandler)
     httpd.socket = ssl.wrap_socket (httpd.socket, 
-           keyfile="Certs/server_10.147.20.60.key", 
-           certfile='Certs/server_10.147.20.60.crt', server_side=True)
+           keyfile="Certs/server_10.147.20.75.key", 
+           certfile='Certs/server_10.147.20.75.crt', server_side=True)
     print("Listening on port 1443")
     httpd.serve_forever()    
 
