@@ -66,6 +66,9 @@ class SASAlgorithms:
         d = radius * c
 
         return d
+    
+    def calculateInterferenceRadius(self, request):
+        return 0.8
 
     def runGrantAlgorithm(self, grants, REM, request, CbsdList, SpectrumList, socket):
         grantResponse = WinnForum.GrantResponse()
@@ -80,10 +83,30 @@ class SASAlgorithms:
             grantResponse.response.responseData = "Frequency range outside of license"
             return grantResponse
         elif self.grantAlgorithm == 'DEFAULT':
-            grantResponse = self.defaultGrantAlg(grants, REM, request, IsPAL, CbsdList, SpectrumList, socket)
+            grantResponse = self.defaultGrantAlg(grants, request, IsPAL, CbsdList, SpectrumList, socket)
         elif self.grantAlgorithm =='TIER':
             grantResponse = self.tierGrantAlg(grants, REM, request)
         return grantResponse
+
+    def createDPAGrant(self, dpa, grants, CbsdList, SpectrumList, socket):
+        grantResponse = WinnForum.GrantResponse()
+        grantRequest = WinnForum.GrantRequest(dpa["id"], None)
+        ofr = WinnForum.FrequencyRange(dpa["spectrum"][0][0], dpa["spectrum"][0][1])
+        op = WinnForum.OperationParam(30, ofr)
+        grantRequest.operationParam = op
+        # request = { "cbsdId" : dpa["id"], "operationParam": { "operationFrequencyRange": { "lowFrequency": dpa["spectrum"][0][0], "highFrequency": dpa["spectrum"][0][1] } } }
+        grantRequest.lat = dpa["latitude"]
+        grantRequest.long = dpa["longitude"]
+        grantRequest.IsDPA = True
+        grantRequest.dist = dpa["radius"] / 1000
+        grantResponse = self.defaultGrantAlg(grants, grantRequest, True, CbsdList, SpectrumList, socket)
+        g = WinnForum.Grant(grantResponse.grantId, dpa["id"], grantResponse.operationParam, None, grantResponse.grantExpireTime)
+        g.IsDpa = True
+        g.lat = dpa["latitude"]
+        g.long = dpa["longitude"]
+        g.id = dpa["id"]
+        g.dist = dpa["radius"] / 1000
+        return g
 
     def runHeartbeatAlgorithm(self, grants, REM, heartbeat, grant):
         response = WinnForum.HeartbeatResponse()
@@ -141,11 +164,11 @@ class SASAlgorithms:
         #return "SUSPENDED_GRANT"
         return "SUCCESS"
 
-    def defaultGrantAlg(self, grants, REM, request, IsPAL, CbsdList, SpectrumList, socket):
+    def defaultGrantAlg(self, grants, request, IsPAL, CbsdList, SpectrumList, socket):
         gr = WinnForum.GrantResponse()
         gr.grantId = None
-        gr.cbsdId = request.cbsdId
-        gr.grantExpireTime = self.calculateGrantExpireTime(grants, REM, None, True)
+        #gr.cbsdId = request["cbsdId"]
+        gr.grantExpireTime = self.calculateGrantExpireTime(grants, None, gr, True)
         gr.heartbeatInterval = self.getHeartbeatIntervalForGrantId(gr.grantId)
         gr.measReportConfig = ["RECEIVED_POWER_WITH_GRANT", "RECEIVED_POWER_WITHOUT_GRANT"]
         conflict = False
@@ -159,24 +182,28 @@ class SASAlgorithms:
             freqa = self.getHighFreqFromOP(request.operationParam)
             freqb = self.getLowFreqFromOP(request.operationParam)
             dist = self.calculateDistance((grant.lat, grant.long), (request.lat, request.long))
+            print("Distance: " + str(dist))
+            print("Grant Distance: " + str(grant.dist))
+            print("Request Distance: " + str(request.dist))
             if self.frequencyOverlap(freqa, freqb, rangea, rangeb):
                 if IsPAL:
-                    grant.status = "TERMINATED"
-                    for i, item in enumerate(SpectrumList):
-                        if(item['cbsdId'] == grant.cbsdId):
-                            item['state'] = 1
-                            item['stateText'] = "Registered"
-                            SpectrumList[i] = item
-                    for i, cbsd in enumerate(CbsdList):
-                        if(cbsd['cbsdId'] == grant.cbsdId):
-                            cbsd['state'] = 1
-                            cbsd['stateText'] = "Registered"
-                            CbsdList[i] = cbsd
-                    socket.emit('spectrumUpdate', SpectrumList)
-                    socket.emit('cbsdUpdate', CbsdList)
-                    time.sleep(1)
+                    if(dist < grant.dist or dist < request.dist):
+                        grant.status = "TERMINATED"
+                        for i, item in enumerate(SpectrumList):
+                            if(item['cbsdId'] == grant.cbsdId):
+                                item['state'] = 1
+                                item['stateText'] = "Registered"
+                                SpectrumList[i] = item
+                        for i, cbsd in enumerate(CbsdList):
+                            if(cbsd['cbsdId'] == grant.cbsdId):
+                                cbsd['state'] = 1
+                                cbsd['stateText'] = "Registered"
+                                CbsdList[i] = cbsd
+                        socket.emit('spectrumUpdate', SpectrumList)
+                        socket.emit('cbsdUpdate', CbsdList)
+                        time.sleep(1)
                 else:
-                    if(dist < 0.100):
+                    if(dist < grant.dist):
                         conflict = True
                     else:
                         print("Distance greater than threshold")

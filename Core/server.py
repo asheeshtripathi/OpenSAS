@@ -50,6 +50,21 @@ isSimulating = True
 NUM_OF_CHANNELS = 15
 puDetections = {}
 
+
+DyanmicProtectionAreas = [
+     {
+         "id": "DPA-HCRO",
+         "latitude": 40.817132,
+         "longitude": -121.470741,
+         "radius": 200000,  # in metres
+         "activationTime": "2023-03-15T15:25:00Z",
+         "deactivationTime": "2023-03-15T15:26:00Z",
+         "active": False,
+         "spectrum": [ [3550000000, 3700000000] ]
+
+     }
+ ]
+
 ############################### Global variables end ###################################################
 
 
@@ -61,6 +76,7 @@ app = socketio.WSGIApp(socket, static_files={
 
 REM = SASREM.SASREM()
 SASAlgorithms = SASAlgorithms.SASAlgorithms()
+
 
 @socket.on('test')
 def test(id, data):
@@ -93,7 +109,7 @@ def getSettings():
         SASAlgorithms.setREMAlgorithm(result["REMAlgorithm"])
     else:
         SASAlgorithms.setGrantAlgorithm('DEFAULT')
-        SASAlgorithms.setHeartbeatInterval(5)
+        SASAlgorithms.setHeartbeatInterval(8)
         SASAlgorithms.setREMAlgorithm('DEFAULT')
     print('GRANT: ' + SASAlgorithms.getGrantAlgorithm() + ' HB: ' + str(SASAlgorithms.getHeartbeatInterval()) + ' REM: ' + SASAlgorithms.getREMAlgorithm())
 
@@ -223,6 +239,40 @@ def disconnect(sid):
 def sendCbsdList(id, data):
     global CbsdList
     socket.emit('cbsdUpdate', CbsdList)
+
+# create a timer that checks if dynamic protection areas startTime are approaching and if so, activate them
+def checkDynamicProtectionAreas():
+    while True:
+        print("Checking dynamic protection areas")
+        for area in DyanmicProtectionAreas:
+            if area["active"] == False:
+                if datetime.now(timezone.utc) > datetime.fromisoformat(area["activationTime"].replace('Z', '+00:00')):
+                    # Check if the deactivation time is in the past
+                    if datetime.now(timezone.utc) > datetime.fromisoformat(area["deactivationTime"].replace('Z', '+00:00')):
+                        continue
+                    area["active"] = True
+                    print("Activating dynamic protection area " + area["id"] + "...")
+                    DpaGrant = SASAlgorithms.createDPAGrant(area, grants, CbsdList, SpectrumList, socket)
+                    grants.append(DpaGrant)
+                    print("Dynamic protection area " + area["id"] + " activated")
+            # If the area is active, check if it should be deactivated
+            else:
+                if datetime.now(timezone.utc) > datetime.fromisoformat(area["deactivationTime"].replace('Z', '+00:00')):
+                # Check if active
+                    if area["active"] == True:
+                        area["active"] = False
+                        print("Dynamic protection area " + area["id"] + " deactivated")
+                        # Remove the DPA grant
+                        for grant in grants:
+                            if grant.id == area["id"]:
+                                terminateGrant(grant.id, area["id"])
+                    
+        time.sleep(1)
+
+
+# Create a new thread to check if dynamic protection areas are approaching
+thread = threading.Thread(target=checkDynamicProtectionAreas)
+thread.start()
 
 @socket.on('registrationRequest')
 def register(sid, data):
@@ -401,6 +451,7 @@ def grantRequest(sid, data):
             vt = item["vtGrantParams"]
             vtgp = WinnForum.VTGrantParams(None, None, vt["preferredFrequency"], vt["frequencyAbsolute"], vt["minBandwidth"], vt["preferredBandwidth"], vt["preferredBandwidth"], vt["startTime"], vt["endTime"], vt["approximateByteSize"], vt["dataType"], vt["powerLevel"], vt["location"], vt["mobility"], vt["maxVelocity"])
             grantRequest.vtGrantParams = vtgp
+        grantRequest.dist = SASAlgorithms.calculateInterferenceRadius(grantRequest)
         grantResponse = SASAlgorithms.runGrantAlgorithm(grants, REM, grantRequest, CbsdList, SpectrumList, socket)#algorithm   
         if databaseLogging:
             sendPostRequest(item)#Database log
@@ -410,6 +461,8 @@ def grantRequest(sid, data):
             g = WinnForum.Grant(grantResponse.grantId, item["cbsdId"], grantResponse.operationParam, vtgp, grantResponse.grantExpireTime)
             g.lat = grantRequest.lat
             g.long = grantRequest.long
+            g.dist = SASAlgorithms.calculateInterferenceRadius(grantRequest)
+            g.IsDPA = False
             grants.append(g)
             subband = computeSubband(item["minFrequency"], item["maxFrequency"])
             SpectrumInfo = {
