@@ -485,6 +485,7 @@ def grantRequest(sid, data):
                         'power': item["powerLevel"],
                         
                     }
+                    cbsd['distance'] = grantRequest.dist
                     CbsdList[i] = cbsd
                     SpectrumInfo['accessPriority'] = cbsd['accessPriority']
                     SpectrumInfo['fccId'] = cbsd['fccId']

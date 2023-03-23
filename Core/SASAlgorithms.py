@@ -25,6 +25,7 @@ class SASAlgorithms:
         self.ignoringREM = True
         self.offerNewParams = True
         self.maxEIRP = 30
+        self.interferenceThresholdBm = -100
         self.cells = []
 
     def setGrantAlgorithm(self, algorithm):
@@ -68,7 +69,12 @@ class SASAlgorithms:
         return d
     
     def calculateInterferenceRadius(self, request):
-        return 0.8
+        transmission_power_dBm = request.operationParam.maxEirp
+        # Calulate the interference radius based on the request
+        path_loss = transmission_power_dBm - self.interferenceThresholdBm
+        log10_distance = (path_loss - 15) / 36
+        distance = 10 ** log10_distance
+        return distance
 
     def runGrantAlgorithm(self, grants, REM, request, CbsdList, SpectrumList, socket):
         grantResponse = WinnForum.GrantResponse()
