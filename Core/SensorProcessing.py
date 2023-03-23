@@ -9,6 +9,7 @@ import json
 import datetime
 import csv
 import os
+import matplotlib.pyplot as plt
 
 class PredictionLogger:
     def __init__(self, filename):
@@ -38,7 +39,13 @@ class SensorProcessor(Thread):
         # do other initialization here
         self.new_data = False
         self.data = None
-        self.model = tf.keras.models.load_model('../../my_model_20230307-213547_acc1.h5')
+        self.labels_processed = np.zeros([1000], dtype=int)
+        self.iq_raw = np.empty([1000, 102400], dtype=np.complex128)
+        self.iq_data = np.empty([1000, 102400], dtype=np.float64)
+        self.create_dataset = False
+        self.num_samples = 0
+        self.model = tf.keras.models.load_model('../../my_model_20230317-140708.h5')
+        self.max_size = 1000
 
     def rolling_average_complex(self, arr, window_size):
         """
@@ -73,13 +80,38 @@ class SensorProcessor(Thread):
     def processSensorData(self, data, sensor_info, channel_info):
         # Process the sensor data for classification using the trained model
         # return the processed data
+        # print first 2 samples
+        print(data[:2])
         complex_samples = np.array([s[0] + 1j * s[1] for s in data])
         complex_np_samples = np.array(complex_samples, dtype=np.complex64)
         print(complex_np_samples.shape)
         iq_averaged = self.rolling_average_complex(complex_np_samples, 1)
+
+        # Calculate the time axis based on the capture rate and number of samples
+        capture_rate = 10.24e6
+        capture_time = len(iq_averaged) / capture_rate
+        time = np.linspace(0, capture_time, len(iq_averaged))
+
+        # Plot the IQ samples over time
+        plt.plot(time, np.real(iq_averaged), label='Real')
+        plt.plot(time, np.imag(iq_averaged), label='Imaginary')
+
+        # Set the plot title and axis labels
+        plt.title("IQ Samples over Time")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Amplitude")
+
+        # Add a legend
+        plt.legend()
+
+        # Display the plot
+        plt.show()
+        plt.savefig("iq-time.png")
+        plt.clf()
+
         # iq_data[i] = rolling_average_complex(np.fft.fft(np.array(complex_samples, dtype=np.complex64)), 4)
         #Set FFT size
-        fft_size = 512
+        fft_size = 128
 
         # Compute the number of time slices and FFT size
         num_slices = int(len(iq_averaged) / fft_size)
@@ -94,11 +126,24 @@ class SensorProcessor(Thread):
         final_data = spectra.flatten()
         
         print(spectra.shape)
-        self.data = final_data
+        #self.data = final_data
+        # Put the real samples into self.data
+        self.data = np.real(iq_averaged)
         new_data = True
-        predictions = self.classifySensorData()
-        self.update_csv(predictions, sensor_info, channel_info, 'predictions.csv')
-        return
+        if(self.create_dataset):
+            self.append(iq_averaged, final_data, 0)
+            # Display the image
+            mag_array_norm = spectra / np.max(spectra)
+            plt.imshow(mag_array_norm.T, cmap='gray')
+            plt.axis('off')
+            plt.show()
+            plt.savefig("fft-time.png")
+            plt.clf()
+            return None
+        else:
+            prediction = self.classifySensorData()
+            self.update_csv(prediction, sensor_info, channel_info, 'predictions.csv')
+            return prediction.tolist()
     
     def run(self):
         """Overloaded Thread.run, runs the update 
@@ -137,7 +182,7 @@ class SensorProcessor(Thread):
         self.prediction = predictions
 
         self.new_data = False
-        return predictions
+        return predictions[0]
 
     def update_csv(self, prediction, sensor_info, channel, file_path):
         # Create the CSV file if it doesn't exist
@@ -153,5 +198,40 @@ class SensorProcessor(Thread):
         # Append data to the CSV file
         with open(file_path, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow([datetime.now(), prediction[0], sensor_id, lat, lon, channel])
+            writer.writerow([datetime.datetime.now(), prediction, sensor_id, lat, lon, channel])
 
+    def append(self, raw_data, data, label):
+        '''
+        Appends data to the dataset.
+
+        Args:
+            data (ndarray): The data to append to the dataset.
+            labels (ndarray): The binary classification labels for the data.
+        '''
+        self.iq_raw[self.num_samples] = raw_data
+        self.iq_data[self.num_samples] =  data
+        self.labels_processed[self.num_samples] = label
+        self.num_samples += 1
+        print(f"Collected {self.num_samples} samples so far. (Max: {self.max_size})")
+        if self.num_samples >= self.max_size:
+            self.save()
+            self.clear()
+
+    def save(self):
+        '''
+        Saves the dataset to a local npz file with a timestamped filename.
+        '''
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"dataset_fft_{timestamp}.npz"
+        np.savez(file_name, X=self.iq_data, y=self.labels_processed)
+        np.savez(f"dataset_raw_{timestamp}.npz", X=self.iq_raw, y=self.labels_processed)
+        print(f"Saved data to {file_name} successfully.")
+
+    def clear(self):
+        '''
+        Clears the dataset.
+        '''
+        self.iq_raw = np.empty([1000, 102400], dtype=np.complex64)
+        self.labels_processed = np.zeros([1000], dtype=int)
+        self.iq_data = np.empty([1000, 102400], dtype=np.float64)
+        self.num_samples = 0

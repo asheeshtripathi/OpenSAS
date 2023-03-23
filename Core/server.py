@@ -884,6 +884,7 @@ def checkPUAlert(data=None):
         threading.Timer(1, checkPUAlert).start()
 
 sensor_process = SensorProcessor()
+sensor_list = []
    
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
@@ -975,12 +976,29 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             response = BytesIO()
             json_str = body.decode('utf-8')  # Decode the bytes into a string
             json_data = json.loads(json_str)  # Parse the string into a JSON object
-            # print(json_data)
             sas_resp = 'Received Measurements'
             print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
-            socket.emit("sensorUpdate", data=json_data)
+            # Set the flag to false
+            SensorDataflag = False
+            # Check if data from this sensor is already present
+            for sensor in sensor_list:
+                if sensor["sensor_id"] == json_data["sensor_id"]:
+                    # If yes, update the data
+                    sensor["channels"] = json_data["channels"]
+                    # Set the flag to break the loop
+                    SensorDataflag = True
+                    break
+            # If the sensor data is not present, add it to the list
+            if SensorDataflag == False:
+                sensor_list.append(json_data)
+            # Create a JSON object to send to the client
+            # print(sensor_list)
+
+            # Send the data to the client
+            socket.emit("sensorUpdate", data=sensor_list[0])
+
         if self.path == "/sas-api/samples":
             content_length = int(self.headers['Content-Length'])
             body = self.rfile.read(content_length)
@@ -992,12 +1010,21 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             print(json_data.keys())
             # print(json_data['iq_samples'])
             
-            sensor_process.processSensorData(json_data['iq_samples'], json_data['sensor_info'], json_data['detected_channel'])
+            prediction = sensor_process.processSensorData(json_data['iq_samples'], json_data['sensor_info'], json_data['detected_channel'])
+            # Add the prediction to the sensor_list list
+            for sensor in sensor_list:
+                if sensor["sensor_id"] == json_data["sensor_info"]["sensor_id"]:
+                    # Iterate through the channels and update the prediction
+                    for channel in sensor["channels"]:
+                        if channel["id"] == json_data["detected_channel"]:
+                            channel["prediction"] = prediction
+                            
+                    break
             sas_resp = 'Received IQ samples'
             print(sas_resp)
             response.write(str.encode(sas_resp))
             self.wfile.write(response.getvalue())
-            # socket.emit("sensorUpdate", data=json_data)
+            socket.emit("sensorUpdate", data=sensor_list[0])
         
 def thread2(args):
     # httpd = HTTPServer(('localhost', 1443), SimpleHTTPRequestHandler)
