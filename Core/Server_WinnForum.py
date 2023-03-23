@@ -961,17 +961,17 @@ class GrantResponse:
 		return_dict = {}
 		if(self.cbsdId):
 			return_dict["cbsdId"] = self.cbsdId 
-		if(self.grantId):
+		if(hasattr(self, "grantId")):
 			return_dict["grantId"] = self.grantId
-		if(self.grantExpireTime):
+		if(hasattr(self, "grantExpireTime")):
 			return_dict["grantExpireTime"] = self.grantExpireTime 
-		if(self.heartbeatInterval):
+		if(hasattr(self, "heartbeatInterval")):
 			return_dict["heartbeatInterval"] = self.heartbeatInterval 
-		if(self.measReportConfig[0]):
+		if(hasattr(self, "measReportConfig")):
 			return_dict["measReportConfig"] = self.measReportConfig 
-		if(self.operationParam):
+		if(hasattr(self, "operationParam") and self.operationParam):
 			return_dict["operationParam"] = self.operationParam.asdict()
-		if(self.channelType):
+		if(hasattr(self, "channelType")):
 			return_dict["channelType"] = self.channelType 
 		if(self.response):
 			return_dict["response"] = self.response.asdict() 
