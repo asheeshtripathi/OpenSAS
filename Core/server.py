@@ -33,6 +33,7 @@ from io import BytesIO
 GETURL = "http://localhost/SASAPI/SAS_API_GET.php"
 POSTURL = "http://localhost/SASAPI/SAS_API.php"
 SASKEY = "qowpe029348fuqw9eufhalksdjfpq3948fy0q98ghefqi"
+RESERVATION_URL = "http://localhost:9258/"
 
 ############################### Global variables start ###################################################
 
@@ -57,10 +58,10 @@ DyanmicProtectionAreas = [
          "latitude": 40.817132,
          "longitude": -121.470741,
          "radius": 200000,  # in metres
-         "activationTime": "2023-03-15T15:25:00Z",
-         "deactivationTime": "2023-03-15T15:26:00Z",
+         "activationTime": "2023-03-25T05:55:00Z",
+         "deactivationTime": "2023-03-25T08:10:00Z",
          "active": False,
-         "spectrum": [ [3550000000, 3700000000] ]
+         "spectrum": [ [3550000000, 3590000000] ]
 
      }
  ]
@@ -240,7 +241,12 @@ def sendCbsdList(id, data):
     global CbsdList
     socket.emit('cbsdUpdate', CbsdList)
 
-# create a timer that checks if dynamic protection areas startTime are approaching and if so, activate them
+@socket.on('getDpaList')
+def sendDpaList(id, data):
+    global DyanmicProtectionAreas
+    socket.emit('dpaUpdate', DyanmicProtectionAreas)
+
+# Function that checks if dynamic protection areas startTime are approaching and if so, activate them
 def checkDynamicProtectionAreas():
     while True:
         print("Checking dynamic protection areas")
@@ -254,6 +260,7 @@ def checkDynamicProtectionAreas():
                     print("Activating dynamic protection area " + area["id"] + "...")
                     DpaGrant = SASAlgorithms.createDPAGrant(area, grants, CbsdList, SpectrumList, socket)
                     grants.append(DpaGrant)
+                    socket.emit('dpaUpdate', DyanmicProtectionAreas)
                     print("Dynamic protection area " + area["id"] + " activated")
             # If the area is active, check if it should be deactivated
             else:
@@ -266,12 +273,131 @@ def checkDynamicProtectionAreas():
                         for grant in grants:
                             if grant.id == area["id"]:
                                 terminateGrant(grant.id, area["id"])
+                                socket.emit('dpaUpdate', DyanmicProtectionAreas)
+
                     
         time.sleep(1)
 
+# Function that downloads a TARDyS3 file from a URL and processes it into a DynamicProtectionAreas object
+def downloadProcessReservation(url):
+    # Download the TARDyS3 file
+    response = requests.get(url)
+    # Process the TARDyS3 file into a DynamicProtectionAreas object
+    # Set default values for frequencyLow, frequencyHigh
+    frequencyLow = 3550000000
+    frequencyHigh = 3700000000
+    # Iterate through each line in the response text and find id, startTime, endTime, frequencyLow, frequencyHigh, radius and location
+    for line in response.text.splitlines():
+        if "id" in line:
+            id = line.split(":")[1].strip()
+        if "startTime" in line:
+            startTime = line.split(":")[1].strip()
+        if "endTime" in line:
+            endTime = line.split(":")[1].strip()
+        if "frequencyLow" in line:
+            frequencyLow = line.split(":")[1].strip()
+        if "frequencyHigh" in line:
+            frequencyHigh = line.split(":")[1].strip()
+        if "location" in line:
+            location = line.split(":")[1].strip()
+        if "radius" in line:
+            radius = line.split(":")[1].strip()
+    # Create a new DynamicProtectionArea object
+    ReservationRequest = {
+        "id": id,
+        "activationTime": startTime,
+        "deactivationTime": endTime,
+        "spectrum": [frequencyLow, frequencyHigh],
+        "latitude": location.split(",")[0],
+        "longitude": location.split(",")[1],
+        "radius": radius
+    }
+    return ReservationRequest
 
-# Create a new thread to check if dynamic protection areas are approaching
+def uploadStatus(DPA_id, status):
+    filename = f"{DPA_id}.txt"
+    with open(filename, "w") as file:
+        file.write(status)
+    
+    print(f"Status '{status}' written to file: {filename}")
+
+    # Assuming the API URL is in the format 'https://example.com/api/upload'
+    api_url = 'https://example.com/api/upload'
+    headers = {
+        'Authorization': 'Bearer your_access_token',  # Replace 'your_access_token' with your actual access token
+    }
+
+    with open(filename, 'rb') as file:
+        files = {
+            'file': (filename, file),
+        }
+        response = requests.post(api_url, headers=headers, files=files)
+
+    if response.status_code == 200:
+        print(f"File {filename} uploaded successfully.")
+    else:
+        print(f"Error uploading file {filename}. Status code: {response.status_code}")
+
+
+def checkReservationRequests():
+    while True:
+        print("Checking reservation requests")
+        try:
+            DPA = downloadProcessReservation(RESERVATION_URL)
+            conflict_found = False
+            same_reservation = False
+
+            for area in DyanmicProtectionAreas:
+                if area["id"] == DPA["id"]:
+                    same_reservation = True
+                    break
+                
+                area_activation = datetime.fromisoformat(area["activationTime"].replace("Z", "+00:00"))
+                area_deactivation = datetime.fromisoformat(area["deactivationTime"].replace("Z", "+00:00"))
+                DPA_activation = datetime.fromisoformat(DPA["activationTime"].replace("Z", "+00:00"))
+                DPA_deactivation = datetime.fromisoformat(DPA["deactivationTime"].replace("Z", "+00:00"))
+
+                if (area_activation <= DPA_activation < area_deactivation) or (
+                    area_activation < DPA_deactivation <= area_deactivation
+                ):
+                    distance = SASAlgorithms.calculateDistance((area["latitude"], area["longitude"]), (DPA["latitude"], DPA["longitude"]))
+                    if distance < (area["radius"] + DPA["radius"]):
+                        for area_spectrum in area["spectrum"]:
+                            for DPA_spectrum in DPA["spectrum"]:
+                                if (
+                                    (area_spectrum[0] <= DPA_spectrum[0] < area_spectrum[1])
+                                    or (area_spectrum[0] < DPA_spectrum[1] <= area_spectrum[1])
+                                ):
+                                    conflict_found = True
+                                    break
+                            if conflict_found:
+                                break
+                if conflict_found:
+                    break
+
+            if same_reservation:
+                print(f"Exact same reservation already exists.")
+            elif conflict_found:
+                print(f"Conflict found between {area['id']} and new DPA reservation request.")
+                uploadStatus(DPA['id'], 'denied')
+            else:
+                print(f"No conflict found for new DPA reservation request.")
+                uploadStatus(DPA['id'], 'confirmed')
+                DyanmicProtectionAreas.append(DPA)
+
+        except Exception as e:
+            print(f"Error while processing reservation requests: {str(e)}")
+        # Add sleep or wait time if necessary, for example, checking every 5 minutes
+        # import time
+        time.sleep(5)
+
+# Thread to check if new DPA reservation requests are available
+# thread = threading.Thread(target=checkReservationRequests)
+# thread.start()
+
+# Thread to check if dynamic protection areas are approaching
 thread = threading.Thread(target=checkDynamicProtectionAreas)
+sleep(5)
 thread.start()
 
 @socket.on('registrationRequest')
