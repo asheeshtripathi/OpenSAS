@@ -187,7 +187,7 @@ class SASAlgorithms:
             rangeb = self.getLowFreqFromOP(grant.operationParam)
             freqa = self.getHighFreqFromOP(request.operationParam)
             freqb = self.getLowFreqFromOP(request.operationParam)
-            dist = self.calculateDistance((grant.lat, grant.long), (request.lat, request.long))
+            dist = self.calculateDistance((grant.lat, grant.long), (request.lat, request.long)) * 1000
             print("Distance: " + str(dist))
             print("Grant Distance: " + str(grant.dist))
             print("Request Distance: " + str(request.dist))

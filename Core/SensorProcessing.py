@@ -10,6 +10,7 @@ import datetime
 import csv
 import os
 import matplotlib.pyplot as plt
+import sys
 
 class PredictionLogger:
     def __init__(self, filename):
@@ -42,10 +43,110 @@ class SensorProcessor(Thread):
         self.labels_processed = np.zeros([1000], dtype=int)
         self.iq_raw = np.empty([1000, 102400], dtype=np.complex128)
         self.iq_data = np.empty([1000, 102400], dtype=np.float64)
-        self.create_dataset = False
+        self.create_dataset = True
         self.num_samples = 0
-        self.model = tf.keras.models.load_model('../../my_model_20230317-140708.h5')
+        self.model = tf.keras.models.load_model('../../full_once_model_20230324-143928.h5')
         self.max_size = 1000
+        self.incumbent_count = 0
+        self.unknown_count = 0
+        self.prediction_avg = 0.50
+
+    def calculate_snr_adaptive(self, iq_samples: np.ndarray, num_std_dev: float = 1.5, epsilon: float = 1e-10) -> float:
+        """
+        Calculate the signal-to-noise ratio (SNR) by identifying multiple signal segments within the entire array,
+        then calculating the signal power and noise power accordingly.
+
+        Args:
+            iq_samples (np.ndarray): A numpy array of dtype=np.complex64 containing the IQ samples.
+            num_std_dev (float): The number of standard deviations to consider for the threshold value.
+            epsilon (float): A small constant to prevent division by zero.
+
+        Returns:
+            float: The SNR of the signal in decibels (dB).
+        """
+        # Ensure the input is a numpy array with dtype np.complex64
+        if not isinstance(iq_samples, np.ndarray) or iq_samples.dtype != np.complex64:
+            raise ValueError("Input must be a numpy array with dtype=np.complex64")
+
+        # Calculate the baseline power
+        baseline_power = np.mean(np.abs(iq_samples) ** 2)
+        baseline_std_dev = np.std(np.abs(iq_samples) ** 2)
+        print("Baseline power: {}".format(baseline_power))
+
+
+        # Find the signal segments
+        threshold = baseline_power + num_std_dev * baseline_std_dev
+        signal_indices = np.where(np.abs(iq_samples) ** 2 > threshold)[0]
+        signal_segments = np.split(signal_indices, np.where(np.diff(signal_indices) != 1)[0] + 1)
+
+        # Calculate the signal power for each segment and the total signal power
+        total_signal_power = 0
+        num_signal_samples = 0
+        for segment in signal_segments:
+            segment_signal_power = np.mean(np.abs(iq_samples[segment]) ** 2)
+            # print("Segment signal power: {}".format(segment_signal_power))
+            total_signal_power += segment_signal_power * len(segment)
+            num_signal_samples += len(segment)
+        avg_signal_power = total_signal_power / num_signal_samples
+        print("Avg signal power: {}".format(avg_signal_power))
+
+        # Calculate the noise power using the non-signal parts of the array
+        noise_indices = np.array(list(set(range(len(iq_samples))) - set(np.hstack(signal_segments))))
+        noise_power = np.mean(np.abs(iq_samples[noise_indices]) ** 2)
+        print("Noise power: {}".format(noise_power))
+        noise_power = 3.2103321245813277e-07
+        ratio = (avg_signal_power) / (noise_power + epsilon)
+
+        # #Square the ratio 
+        # ratio_sqr = ratio * ratio
+
+        # Calculate the SNR
+        snr = 10 * np.log10(ratio)
+
+        return snr
+
+
+    def calculate_snr_adaptive_old(self, iq_samples: np.ndarray, threshold: float = 1.5) -> float:
+        """
+        Calculate the signal-to-noise ratio (SNR) by identifying multiple signal segments within the entire array,
+        then calculating the signal power and noise power accordingly.
+
+        Args:
+            iq_samples (np.ndarray): A numpy array of dtype=np.complex64 containing the IQ samples.
+            threshold (float): A threshold value to identify the signal segments.
+
+        Returns:
+            float: The SNR of the signal in decibels (dB).
+        """
+        # Ensure the input is a numpy array with dtype np.complex64
+        if not isinstance(iq_samples, np.ndarray) or iq_samples.dtype != np.complex64:
+            raise ValueError("Input must be a numpy array with dtype=np.complex64")
+
+        # Calculate the baseline power
+        baseline_power = np.mean(np.abs(iq_samples) ** 2)
+
+        # Find the signal segments
+        signal_indices = np.where(np.abs(iq_samples) ** 2 > threshold * baseline_power)[0]
+        signal_segments = np.split(signal_indices, np.where(np.diff(signal_indices) != 1)[0] + 1)
+
+        # Calculate the signal power for each segment and the total signal power
+        total_signal_power = 0
+        num_signal_samples = 0
+        for segment in signal_segments:
+            segment_signal_power = np.mean(np.abs(iq_samples[segment]) ** 2)
+            total_signal_power += segment_signal_power * len(segment)
+            num_signal_samples += len(segment)
+        avg_signal_power = total_signal_power / num_signal_samples
+
+        # Calculate the noise power using the non-signal parts of the array
+        noise_indices = np.array(list(set(range(len(iq_samples))) - set(np.hstack(signal_segments))))
+        noise_power = np.mean(np.abs(iq_samples[noise_indices]) ** 2)
+
+        # Calculate the SNR
+        snr = 10 * np.log10(avg_signal_power / noise_power)
+
+        return snr
+
 
     def rolling_average_complex(self, arr, window_size):
         """
@@ -85,7 +186,11 @@ class SensorProcessor(Thread):
         complex_samples = np.array([s[0] + 1j * s[1] for s in data])
         complex_np_samples = np.array(complex_samples, dtype=np.complex64)
         print(complex_np_samples.shape)
-        iq_averaged = self.rolling_average_complex(complex_np_samples, 1)
+        #iq_averaged = self.rolling_average_complex(complex_np_samples, 1)
+        iq_averaged = complex_np_samples
+        # print snr for the signal
+        calculated_snr = self.calculate_snr_adaptive(iq_averaged)
+        print("SNR: ", calculated_snr)
 
         # Calculate the time axis based on the capture rate and number of samples
         capture_rate = 10.24e6
@@ -128,10 +233,20 @@ class SensorProcessor(Thread):
         print(spectra.shape)
         #self.data = final_data
         # Put the real samples into self.data
-        self.data = np.real(iq_averaged)
+        # Split the complex IQ samples into their real and imaginary components
+        real_samples = np.real(iq_averaged)
+        max_vals = np.max(np.abs(real_samples), axis=0)
+        # print("Max values: " + str(max_vals[:10]))
+        # # print max values shape
+        # print("Max values shape: " + str(max_vals.shape))
+        real_samples = real_samples / max_vals
+        self.data = np.real(real_samples)
         new_data = True
         if(self.create_dataset):
-            self.append(iq_averaged, final_data, 0)
+            # calculated_snr is higher than 3, then append to dataset
+            if(calculated_snr > 3):
+                self.append(iq_averaged, final_data, 0)
+                print("Added to dataset")
             # Display the image
             mag_array_norm = spectra / np.max(spectra)
             plt.imshow(mag_array_norm.T, cmap='gray')
@@ -142,7 +257,7 @@ class SensorProcessor(Thread):
             return None
         else:
             prediction = self.classifySensorData()
-            self.update_csv(prediction, sensor_info, channel_info, 'predictions.csv')
+            self.update_csv(prediction, sensor_info, channel_info, calculated_snr, 'predictions.csv')
             return prediction.tolist()
     
     def run(self):
@@ -172,8 +287,8 @@ class SensorProcessor(Thread):
         tf.config.run_functions_eagerly(True)       
 
         # Perform the classification
-        print("data shape")
-        print(self.data.shape)
+        # print("data shape")
+        # print(self.data.shape)
         predictions = self.model.predict(input_data)
 
         # Print the predictions
@@ -184,21 +299,44 @@ class SensorProcessor(Thread):
         self.new_data = False
         return predictions[0]
 
-    def update_csv(self, prediction, sensor_info, channel, file_path):
+    def update_csv(self, prediction, sensor_info, channel, calculated_snr, file_path):
+        # Check if the CSV file exists and read the number of rows
+        index = 0
+        
+        if os.path.isfile(file_path):
+            with open(file_path, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+                index = sum(1 for _ in reader) - 1
+
         # Create the CSV file if it doesn't exist
         if not os.path.isfile(file_path):
             with open(file_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(['prediction', 'sensor_id', 'lat', 'lon', 'channel'])
+                writer.writerow(['index', 'timestamp', 'prediction', 'sensor_id', 'lat', 'lon', 'channel', 'predicted_user', 'calculated_snr', 'incumbent_count', 'unknown_count', 'prediction_avg'])
+
         # Convert sensor_info JSON string to a dictionary and extract fields
         sensor_info_dict = sensor_info
         sensor_id = sensor_info_dict['sensor_id']
         lat = sensor_info_dict['lat']
         lon = sensor_info_dict['lon']
+
         # Append data to the CSV file
         with open(file_path, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow([datetime.datetime.now(), prediction, sensor_id, lat, lon, channel])
+            if(prediction[0] >= 0.80):
+                predicted_user = "incumbent"
+                self.incumbent_count += 1
+            elif(prediction[0] <= 0.30):
+                predicted_user = "unknown"
+                self.unknown_count += 1
+            else:
+                predicted_user = "unknown"
+                self.unknown_count += 1
+
+            # calculate prediction average
+            self.prediction_avg = (self.prediction_avg * (index) + prediction[0]) / (index + 1)
+            writer.writerow([index, datetime.datetime.now(), prediction, sensor_id, lat, lon, channel, predicted_user, calculated_snr, self.incumbent_count, self.unknown_count, self.prediction_avg])
+            index += 1
 
     def append(self, raw_data, data, label):
         '''
@@ -216,6 +354,7 @@ class SensorProcessor(Thread):
         if self.num_samples >= self.max_size:
             self.save()
             self.clear()
+            sys.exit()
 
     def save(self):
         '''
@@ -223,7 +362,7 @@ class SensorProcessor(Thread):
         '''
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"dataset_fft_{timestamp}.npz"
-        np.savez(file_name, X=self.iq_data, y=self.labels_processed)
+        #np.savez(file_name, X=self.iq_data, y=self.labels_processed)
         np.savez(f"dataset_raw_{timestamp}.npz", X=self.iq_raw, y=self.labels_processed)
         print(f"Saved data to {file_name} successfully.")
 

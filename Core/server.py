@@ -61,7 +61,7 @@ DyanmicProtectionAreas = [
          "activationTime": "2023-03-15T15:25:00Z",
          "deactivationTime": "2023-03-15T15:26:00Z",
          "active": False,
-         "spectrum": [ [3550000000, 3700000000] ]
+         "spectrum": [ [3600000000, 3700000000] ]
 
      }
  ]
@@ -255,6 +255,7 @@ def checkDynamicProtectionAreas():
                     print("Activating dynamic protection area " + area["id"] + "...")
                     DpaGrant = SASAlgorithms.createDPAGrant(area, grants, CbsdList, SpectrumList, socket)
                     grants.append(DpaGrant)
+                    socket.emit('dpaUpdate', DyanmicProtectionAreas)
                     print("Dynamic protection area " + area["id"] + " activated")
             # If the area is active, check if it should be deactivated
             else:
@@ -267,6 +268,7 @@ def checkDynamicProtectionAreas():
                         for grant in grants:
                             if grant.id == area["id"]:
                                 terminateGrant(grant.id, area["id"])
+                                socket.emit('dpaUpdate', DyanmicProtectionAreas)
                     
         time.sleep(1)
 
@@ -1067,8 +1069,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             # Check if data from this sensor is already present
             for sensor in sensor_list:
                 if sensor["sensor_id"] == json_data["sensor_id"]:
-                    # If yes, update the data
-                    sensor["channels"] = json_data["channels"]
+                    # If yes, iterate through channels and update the power with enumerate
+                    for index, channel  in enumerate(sensor["channels"]):
+                        channel["power"] = json_data["channels"][index]["power"]
+                        channel["detected"] = json_data["channels"][index]["detected"]
+                    
                     # Set the flag to break the loop
                     SensorDataflag = True
                     break
@@ -1094,12 +1099,19 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             
             prediction = sensor_process.processSensorData(json_data['iq_samples'], json_data['sensor_info'], json_data['detected_channel'])
             # Add the prediction to the sensor_list list
-            for sensor in sensor_list:
-                if sensor["sensor_id"] == json_data["sensor_info"]["sensor_id"]:
-                    # Iterate through the channels and update the prediction
-                    for channel in sensor["channels"]:
-                        if channel["id"] == json_data["detected_channel"]:
-                            channel["prediction"] = prediction
+            if prediction is not None:
+                for sensor in sensor_list:
+                    if sensor["sensor_id"] == json_data["sensor_info"]["sensor_id"]:
+                        # Iterate through the channels and update the prediction
+                        for channel in sensor["channels"]:
+                            if channel["id"] == json_data["detected_channel"]:
+                                channel["prediction"] = prediction
+                                if(prediction[0] >= 0.80):
+                                    channel["signal"] = "Incumbent"
+                                if(prediction[0] <= 0.30):
+                                    channel["signal"] = "unknown"
+                                if(prediction[0] > 0.30 and prediction[0] < 0.85):
+                                    channel["signal"] = "Unknown"
                             
                     break
             sas_resp = 'Received IQ samples'
