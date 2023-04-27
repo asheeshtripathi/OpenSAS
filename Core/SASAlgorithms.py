@@ -71,6 +71,8 @@ class SASAlgorithms:
     def calculateInterferenceRadius(self, request):
         transmission_power_dBm = request.operationParam.maxEirp
         # Calulate the interference radius based on the request
+        # PL(d)=15+36log10d (3.5 GHz)
+        # https://ieeexplore-ieee-org.ezproxy.lib.vt.edu/document/4735242
         path_loss = transmission_power_dBm - self.interferenceThresholdBm
         log10_distance = (path_loss - 15) / 36
         distance = 10 ** log10_distance
@@ -104,14 +106,14 @@ class SASAlgorithms:
         grantRequest.lat = dpa["latitude"]
         grantRequest.long = dpa["longitude"]
         grantRequest.IsDPA = True
-        grantRequest.dist = dpa["radius"] / 1000
+        grantRequest.dist = dpa["radius"]
         grantResponse = self.defaultGrantAlg(grants, grantRequest, True, CbsdList, SpectrumList, socket)
         g = WinnForum.Grant(grantResponse.grantId, dpa["id"], grantResponse.operationParam, None, grantResponse.grantExpireTime)
         g.IsDpa = True
         g.lat = dpa["latitude"]
         g.long = dpa["longitude"]
         g.id = dpa["id"]
-        g.dist = dpa["radius"] / 1000
+        g.dist = dpa["radius"] 
         return g
 
     def runHeartbeatAlgorithm(self, grants, REM, heartbeat, grant):
@@ -209,7 +211,7 @@ class SASAlgorithms:
                         socket.emit('cbsdUpdate', CbsdList)
                         time.sleep(1)
                 else:
-                    if(dist < grant.dist):
+                    if(dist < (grant.dist + request.dist)):
                         conflict = True
                     else:
                         print("Distance greater than threshold")
