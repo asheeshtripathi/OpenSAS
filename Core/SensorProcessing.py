@@ -43,7 +43,7 @@ class SensorProcessor(Thread):
         self.labels_processed = np.zeros([1000], dtype=int)
         self.iq_raw = np.empty([1000, 102400], dtype=np.complex128)
         self.iq_data = np.empty([1000, 102400], dtype=np.float64)
-        self.create_dataset = True
+        self.create_dataset = False
         self.num_samples = 0
         self.model = tf.keras.models.load_model('../../full_once_model_20230324-143928.h5')
         self.max_size = 1000
