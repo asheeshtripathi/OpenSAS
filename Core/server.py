@@ -282,7 +282,7 @@ def signalDetected(channel, incumbent_detected, sensorInfo, x=3, allowed_misses=
         activateIncumbentProtection(channel, sensorInfo)
         print(f"Activated incumbent protection for Channel {channel} by Sensor {sensorId}")
     elif consecutive_counts[channel] <= -x:
-        deactivateIncumbentProtection(channel, sensorInfo)
+        # deactivateIncumbentProtection(channel, sensorInfo)
         print(f"Deactivated incumbent protection for Channel {channel} by Sensor {sensorId}")
 
 def activateIncumbentProtection(channel, sensorInfo):
@@ -306,12 +306,30 @@ def activateIncumbentProtection(channel, sensorInfo):
                         return
                 else:    
                     print(f"Grant already exists for Channel {channel} by Sensor {sensorId}")
+                    grant.endTime = datetime.now(timezone.utc) + timedelta(seconds=5)
                     return
     # Create a new incumbent protection grant
     print(f"Creating new incumbent protection grant for Channel {channel} by Sensor {sensorId}")
     IncumbentGrant = SASAlgorithms.createIncumbentGrant(sensorInfo, channel, grants, CbsdList, SpectrumList, socket)
+    IncumbentGrant.isIncumbentProtection = True
+    IncumbentGrant.endTime = datetime.now(timezone.utc) + timedelta(seconds=5)
     grants.append(IncumbentGrant)
 
+def checkIncumbentProtectionGrants():
+    while True:
+        # print("Checking incumbent protection grants")
+        for grant in grants:
+            if hasattr(grant, "isIncumbentProtection"):
+                if grant.isIncumbentProtection:
+                    if datetime.now(timezone.utc) > grant.endTime:
+                        print("Deleting incumbent protection grant " + str(grant.id) + " from list")
+                        grants.remove(grant)
+        time.sleep(1)
+
+
+# Thread to check for expired incumbent protection grants and remove them
+thread = threading.Thread(target=checkIncumbentProtectionGrants)
+thread.start()
 
 
 ###############################################################################################################################
