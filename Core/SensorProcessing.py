@@ -40,13 +40,13 @@ class SensorProcessor(Thread):
         # do other initialization here
         self.new_data = False
         self.data = None
-        self.labels_processed = np.zeros([1000], dtype=int)
-        self.iq_raw = np.empty([1000, 102400], dtype=np.complex128)
-        self.iq_data = np.empty([1000, 102400], dtype=np.float64)
-        self.create_dataset = True
+        self.max_size = 500
+        self.labels_processed = np.zeros([self.max_size], dtype=int)
+        self.iq_raw = np.empty([self.max_size, 102400], dtype=np.complex128)
+        self.iq_data = np.empty([self.max_size, 102400], dtype=np.float64)
+        self.create_dataset = False
         self.num_samples = 0
-        self.model = tf.keras.models.load_model('../../full_once_model_20230324-143928.h5')
-        self.max_size = 1000
+        self.model = tf.keras.models.load_model('../../demo_v3.h5')
         self.incumbent_count = 0
         self.unknown_count = 0
         self.prediction_avg = 0.50
@@ -245,7 +245,7 @@ class SensorProcessor(Thread):
         if(self.create_dataset):
             # calculated_snr is higher than 3, then append to dataset
             if(calculated_snr > 3):
-                self.append(iq_averaged, final_data, 0)
+                self.append(iq_averaged, final_data, 1)
                 print("Added to dataset")
             # Display the image
             mag_array_norm = spectra / np.max(spectra)

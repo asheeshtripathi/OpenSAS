@@ -254,6 +254,89 @@ def sendDpaList(id, data):
     global DyanmicProtectionAreas
     socket.emit('dpaUpdate', DyanmicProtectionAreas)
 
+############################################### Incumbent Detection #########################################################
+
+# Global dictionary to keep track of the count of consecutive IncumbentDetected values for each channel
+consecutive_counts = {}
+
+def signalDetected(channel, incumbent_detected, sensorInfo, x=3, allowed_misses=2):
+    global consecutive_counts
+
+    # Get sensorId from sensorInfo
+    sensorId = sensorInfo["sensor_id"]
+
+    print("Signal detected on channel " + str(channel) + " by sensor " + str(sensorId) + " with incumbent_detected = " + str(incumbent_detected))
+
+    # Initialize channel count if not already present in consecutive_counts
+    if channel not in consecutive_counts:
+        consecutive_counts[channel] = 0
+
+    # Check if incumbent_detected is true or false and update consecutive_counts accordingly
+    if incumbent_detected:
+        consecutive_counts[channel] = min(consecutive_counts[channel] + 1, x + allowed_misses)
+    else:
+        consecutive_counts[channel] = max(consecutive_counts[channel] - 1, -(x + allowed_misses))
+
+    # Call activateIncumbentProtection or deactivateIncumbentProtection based on consecutive_counts
+    if consecutive_counts[channel] >= x:
+        activateIncumbentProtection(channel, sensorInfo)
+        print(f"Activated incumbent protection for Channel {channel} by Sensor {sensorId}")
+    elif consecutive_counts[channel] <= -x:
+        # deactivateIncumbentProtection(channel, sensorInfo)
+        print(f"Deactivated incumbent protection for Channel {channel} by Sensor {sensorId}")
+
+def activateIncumbentProtection(channel, sensorInfo):
+
+    # Get sensorId from sensorInfo
+    sensorId = sensorInfo["sensor_id"]
+    sensorLat = sensorInfo["lat"]
+    sensorLon = sensorInfo["lon"]
+
+    # Check if grant already exists for the channel and sensorId
+    for grant in grants:
+        # check if sensorId exists in grant id string
+        print(grant)
+        if sensorId in grant.id:
+            # check if channel exists in grant id string (like "channel1")
+            if "channel" + str(channel) in grant.id:
+                # check if grant is already active
+                if hasattr(grant, "status"):
+                    if(grant.status != "TERMINATED"):
+                        print(f"Grant already exists for Channel {channel} by Sensor {sensorId}")
+                        return
+                else:    
+                    print(f"Grant already exists for Channel {channel} by Sensor {sensorId}")
+                    grant.endTime = datetime.now(timezone.utc) + timedelta(seconds=5)
+                    return
+    # Create a new incumbent protection grant
+    print(f"Creating new incumbent protection grant for Channel {channel} by Sensor {sensorId}")
+    IncumbentGrant = SASAlgorithms.createIncumbentGrant(sensorInfo, channel, grants, CbsdList, SpectrumList, socket)
+    IncumbentGrant.isIncumbentProtection = True
+    IncumbentGrant.endTime = datetime.now(timezone.utc) + timedelta(seconds=5)
+    grants.append(IncumbentGrant)
+
+def checkIncumbentProtectionGrants():
+    while True:
+        # print("Checking incumbent protection grants")
+        for grant in grants:
+            if hasattr(grant, "isIncumbentProtection"):
+                if grant.isIncumbentProtection:
+                    if datetime.now(timezone.utc) > grant.endTime:
+                        print("Deleting incumbent protection grant " + str(grant.id) + " from list")
+                        grants.remove(grant)
+        time.sleep(1)
+
+
+# Thread to check for expired incumbent protection grants and remove them
+thread = threading.Thread(target=checkIncumbentProtectionGrants)
+thread.start()
+
+
+###############################################################################################################################
+
+
+################################################# Dynamic Protected Areas #####################################################
+
 # Function that checks if dynamic protection areas startTime are approaching and if so, activate them
 def checkDynamicProtectionAreas():
     while True:
@@ -401,6 +484,8 @@ thread.start()
 thread = threading.Thread(target=checkDynamicProtectionAreas)
 sleep(5)
 thread.start()
+
+################################################################################################################################################
 
 @socket.on('registrationRequest')
 def register(sid, data):
@@ -617,7 +702,14 @@ def grantRequest(sid, data):
                     CbsdList[i] = cbsd
                     SpectrumInfo['accessPriority'] = cbsd['accessPriority']
                     SpectrumInfo['fccId'] = cbsd['fccId']
-            SpectrumList.append(SpectrumInfo)        
+            InsertCbsdInSpectrumList = True
+            # Check if the cbsd is already in the spectrum list
+            for i, spectrum in enumerate(SpectrumList):
+                if SpectrumInfo["cbsdId"] == spectrum["cbsdId"]:
+                    SpectrumList[i] = SpectrumInfo
+                    InsertCbsdInSpectrumList = False
+            if(InsertCbsdInSpectrumList):
+                SpectrumList.append(SpectrumInfo)        
             socket.emit('spectrumUpdate', SpectrumList)
             socket.emit('cbsdUpdate', CbsdList)
 
@@ -1231,13 +1323,17 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                         for channel in sensor["channels"]:
                             if channel["id"] == json_data["detected_channel"]:
                                 channel["prediction"] = prediction
+                                incumbent_detected = False
                                 if(prediction[0] >= 0.80):
                                     channel["signal"] = "Incumbent"
+                                    incumbent_detected = True
                                 if(prediction[0] <= 0.30):
                                     channel["signal"] = "unknown"
-                                if(prediction[0] > 0.30 and prediction[0] < 0.85):
-                                    channel["signal"] = "Unknown"
-                            
+                                if(prediction[0] > 0.30 and prediction[0] < 0.80):
+                                    channel["signal"] = "unknown"
+                                
+                                # Call signalDetected() function
+                                signalDetected(channel["id"], incumbent_detected, json_data["sensor_info"])
                     break
             sas_resp = 'Received IQ samples'
             print(sas_resp)

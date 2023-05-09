@@ -12,14 +12,22 @@ openssl req -x509 -new -key ca.key -out ca.crt -subj "/C=US/ST=California/L=San 
 echo -n "Enter the server hostname: "
 read server_hostname
 
+# Create a temporary openssl.cnf with the server_hostname
+openssl_cnf="openssl_${server_hostname}.cnf"
+cp openssl.cnf "$openssl_cnf"
+sed -i 's/\$hostname_or_ip/'"$server_hostname"'/g' "$openssl_cnf"
+
 # Generate the server private key
 openssl genpkey -algorithm RSA -out "server_$server_hostname.key"
 
 # Generate the server certificate signing request (CSR)
-openssl req -new -key "server_$server_hostname.key" -out "server_$server_hostname.csr" -subj "/C=US/ST=California/L=San Francisco/O=My Server/CN=$server_hostname"
+openssl req -new -key "server_$server_hostname.key" -out "server_$server_hostname.csr" -subj "/C=US/ST=California/L=San Francisco/O=My Server/CN=$server_hostname" -config "$openssl_cnf"
 
 # Sign the server certificate with the CA
-openssl x509 -req -in "server_$server_hostname.csr" -CA ca.crt -CAkey ca.key -CAcreateserial -out "server_$server_hostname.crt"
+openssl x509 -req -in "server_$server_hostname.csr" -CA ca.crt -CAkey ca.key -CAcreateserial -out "server_$server_hostname.crt" -extfile "$openssl_cnf" -extensions v3_req
+
+# Remove the temporary openssl.cnf for the server
+rm -f "$openssl_cnf"
 
 # Prompt for the client's hostname or IP address
 echo -n "Enter the client's hostname or IP address: "
@@ -27,6 +35,11 @@ read client_name
 
 # Set the subject for the client certificate
 client_subject="/C=US/ST=California/L=San Francisco/O=My Client/CN=$client_name"
+
+# Create a temporary openssl.cnf with the client_name
+openssl_cnf="openssl_${client_name}.cnf"
+cp openssl_client.cnf "$openssl_cnf"
+sed -i 's/\$client_name/'"$client_name"'/g' "$openssl_cnf"
 
 i=0
 while true; do
@@ -44,7 +57,7 @@ while true; do
   # Generate the client certificate signing request (CSR)
   csr_file="client_$client_name-$i.csr"
   if [ ! -f "$csr_file" ]; then
-    openssl req -new -key "$key_file" -out "$csr_file" -subj "$client_subject"
+    openssl req -new -key "$key_file" -out "$csr_file" -subj "$client_subject" -config "$openssl_cnf"
     break
   fi
   i=$((i + 1))
@@ -55,14 +68,20 @@ while true; do
   # Sign the client certificate with the CA
   crt_file="client_$client_name-$i.crt"
   if [ ! -f "$crt_file" ]; then
-    openssl x509 -req -in "$csr_file" -CA ca.crt -CAkey ca.key -CAcreateserial -out "$crt_file"
+    openssl x509 -req -in "$csr_file" -CA ca.crt -CAkey ca.key -CAcreateserial -out "$crt_file" -extfile "$openssl_cnf" -extensions v3_req
     break
   fi
   i=$((i + 1))
 done
+
+# Remove the temporary openssl.cnf for the client
+rm -f "$openssl_cnf"
 
 # Print the full paths of the CA and server certificates
 echo "CA private key: $(pwd)/ca.key"
 echo "CA certificate: $(pwd)/ca.crt"
 echo "Server private key: $(pwd)/server_$server_hostname.key"
 echo "Server certificate: $(pwd)/server_$server_hostname.crt"
+echo "Client private key: $(pwd)/$key_file"
+echo "Client certificate: $(pwd)/$crt_file"
+

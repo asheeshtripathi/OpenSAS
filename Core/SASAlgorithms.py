@@ -78,6 +78,29 @@ class SASAlgorithms:
         distance = 10 ** log10_distance
         return distance
 
+    def get_center_freq(self, channel):
+        channel_width = 10.0e6  # The width of each channel in MHz.
+        base_freq = 3550.0e6  # The frequency of the first channel in MHz.
+
+        # Calculate the center frequency of the specified channel using the formula:
+        # centerFreq = baseFreq + (channel * channelWidth) + (channelWidth / 2.0)
+        center_freq = base_freq + (channel * channel_width) + (channel_width / 2.0)
+
+        # Return the center frequency to the caller.
+        return center_freq
+
+
+    def get_freq_range(self, channel):
+        center_freq = self.get_center_freq(channel)
+        channel_width = 10.0e6  # The width of each channel in MHz.
+
+        # Calculate the low and high frequencies for the specified channel
+        freq_low = center_freq - (channel_width / 2.0)
+        freq_high = center_freq + (channel_width / 2.0)
+
+        # Return the low and high frequencies as a tuple
+        return freq_low, freq_high
+
     def runGrantAlgorithm(self, grants, REM, request, CbsdList, SpectrumList, socket):
         grantResponse = WinnForum.GrantResponse()
         IsPAL = False
@@ -115,6 +138,42 @@ class SASAlgorithms:
         g.id = dpa["id"]
         g.dist = dpa["radius"] 
         return g
+
+    # Create a incumbent grant
+    def createIncumbentGrant(self, sensorInfo, channel, grants, CbsdList, SpectrumList, socket):
+        sensorId = sensorInfo["sensor_id"]
+        sensorLat = sensorInfo["lat"]
+        sensorLon = sensorInfo["lon"]
+
+        t = datetime.now(timezone.utc)
+        t = t + timedelta(seconds = self.maxGrantTime)
+        ExpiryTime = t.strftime("%Y%m%dT%H:%M:%S%Z")
+
+        grantResponse = WinnForum.GrantResponse()
+        frequency_low, frequency_high = self.get_freq_range(channel)
+        
+        grantRequest = WinnForum.GrantRequest(f"incumbent-{sensorId}-channel{channel}", None)
+        ofr = WinnForum.FrequencyRange(frequency_low, frequency_high)
+        op = WinnForum.OperationParam(30, ofr)
+        grantRequest.operationParam = op
+        
+        grantRequest.lat = sensorLat
+        grantRequest.long = sensorLon
+        
+        grantRequest.dist = 1000
+        grantResponse.grantExpireTime = ExpiryTime
+        grantResponse = self.defaultGrantAlg(grants, grantRequest, True, CbsdList, SpectrumList, socket)
+        g = WinnForum.Grant(grantResponse.grantId, f"incumbent-{sensorId}-channel{channel}", grantResponse.operationParam, None, grantResponse.grantExpireTime)
+        
+        g.lat = sensorLat
+        g.long = sensorLon
+        
+        g.id = f"incumbent-{sensorId}-channel{channel}"
+        
+        g.dist = 1000
+        
+        return g
+
 
     def runHeartbeatAlgorithm(self, grants, REM, heartbeat, grant):
         response = WinnForum.HeartbeatResponse()
@@ -195,7 +254,7 @@ class SASAlgorithms:
             print("Request Distance: " + str(request.dist))
             if self.frequencyOverlap(freqa, freqb, rangea, rangeb):
                 if IsPAL:
-                    if(dist < grant.dist or dist < request.dist):
+                    if(dist < grant.dist or dist < request.dist or dist < (grant.dist + request.dist)):
                         grant.status = "TERMINATED"
                         for i, item in enumerate(SpectrumList):
                             if(item['cbsdId'] == grant.cbsdId):
