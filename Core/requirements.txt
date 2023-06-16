@@ -7,6 +7,10 @@ eventlet
 python-engineio==3.13.2
 python-socketio==4.6.0
 numpy
+tensorflow
+scikit-learn
+scipy
+matplotlib
 
 ###### Requirements with Version Specifiers ######
 #   See https://www.python.org/dev/peps/pep-0440/#version-specifiers
